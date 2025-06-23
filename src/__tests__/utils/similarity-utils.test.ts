@@ -113,9 +113,9 @@ describe('similarity-utils', () => {
       const result = calculateSimilarity(userState, templateState, 'test-migration', '2025-01-01');
 
       expect(result.exactMatches).toEqual([]);
-      expect(result.partialMatches).toEqual([]);
-      expect(result.missingFiles).toEqual(['file1.txt']);
-      expect(result.score).toBe(-3); // Missing file penalty
+      expect(result.partialMatches).toEqual(['file1.txt']); // File exists but very different
+      expect(result.missingFiles).toEqual([]);
+      expect(result.score).toBe(1); // Low similarity partial match: +1 point
     });
   });
 

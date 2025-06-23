@@ -89,10 +89,13 @@ interface SimilarityScore {
 
 **Scoring Algorithm:**
 - **Exact file match**: +10 points (identical content)
-- **Partial content match**: +5 points (>80% line-by-line similarity)
+- **High similarity partial match**: +5 points (≥80% line-by-line similarity)
+- **Low similarity partial match**: +1 point (file exists but <80% similar)
 - **Missing expected file**: -3 points (template has file, user doesn't)
 - **Extra file in user repo**: -1 point (user has file, template doesn't)
 - **Matching directory structure**: +2 points per matching directory
+
+**Note:** Files that exist in both repositories are always classified as either "exact matches" or "partial matches" regardless of similarity level. Only files that exist in the template but not in the user's repository are classified as "missing".
 
 **Threshold:** Scores ≥ 0 are considered valid matches. Negative scores are rejected.
 
@@ -255,9 +258,11 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
 
 2. **Similarity Calculation**
    - Hash-based comparison for exact file content matches
-   - Line-by-line similarity analysis for partial matches (>80% threshold)
+   - Line-by-line similarity analysis for partial matches (≥80% threshold for high similarity)
+   - Files existing in both repos but <80% similar are still treated as partial matches (low similarity)
    - Directory structure scoring for organizational similarity
    - Weighted scoring system balances precision vs recall
+   - **Fixed:** Files that exist in both repositories are never classified as "missing"
 
 3. **Edge Cases Handled**
    - Empty user repository (requires minimum file threshold)
@@ -313,3 +318,16 @@ This historical reconstruction approach:
 - Provides clear visibility into the sync process
 - Minimizes manual intervention and guesswork
 - Respects both `.gitignore` and `.migrateignore` patterns to prevent unwanted files in migrations
+
+## Recent Fixes
+
+### v1.2.1 - Fixed File Classification Bug
+**Issue:** Files that existed in both repositories but had different content were incorrectly classified as "missing" instead of "partial matches" when similarity was below 80%.
+
+**Example:** A `biome.json` file present in both template and user repo but with different configurations would show as "missing" rather than requiring merge resolution.
+
+**Fix:** Updated similarity calculation logic in `src/utils/similarity-utils.ts` to:
+- Always classify files that exist in both repositories as "partial matches" regardless of similarity level
+- Only classify files as "missing" when they exist in template but not in user repository
+- Low similarity files (< 80%) now receive +1 point instead of -3 penalty
+- Ensures proper interactive handling through merge/replace/skip workflow

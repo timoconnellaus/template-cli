@@ -44,8 +44,8 @@ export function calculateSimilarity(
           partialMatches.push(filePath);
           score += 5; // Partial content match (>=80% similar): +5 points
         } else {
-          missingFiles.push(filePath);
-          score -= 3; // Missing expected file: -3 points
+          partialMatches.push(filePath);
+          score += 1; // Low similarity partial match: +1 point (file exists but very different)
         }
       }
     } else {
