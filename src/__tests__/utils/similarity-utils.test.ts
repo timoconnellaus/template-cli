@@ -352,8 +352,10 @@ describe('similarity-utils', () => {
       expect(formatted).toContain('test-migration');
       expect(formatted).toContain('2 exact file matches');
       expect(formatted).toContain('1 files with minor differences');
-      expect(formatted).toContain('1 files missing from your repo');
-      expect(formatted).toContain('1 files only in your repo');
+      expect(formatted).toContain('1 files missing from your repo:');
+      expect(formatted).toContain('• file4.txt');
+      expect(formatted).toContain('1 files only in your repo:');
+      expect(formatted).toContain('• file5.txt');
     });
 
     it('should handle score with no missing or extra files', () => {
@@ -374,6 +376,28 @@ describe('similarity-utils', () => {
       expect(formatted).toContain('0 files with minor differences');
       expect(formatted).not.toContain('files missing from your repo');
       expect(formatted).not.toContain('files only in your repo');
+    });
+
+    it('should list multiple missing and extra files', () => {
+      const score = {
+        migrationName: 'test-migration',
+        timestamp: '2025-01-01',
+        score: 10,
+        exactMatches: ['file1.txt'],
+        partialMatches: [],
+        missingFiles: ['missing1.txt', 'missing2.txt', 'missing3.txt'],
+        extraFiles: ['extra1.txt', 'extra2.txt']
+      };
+
+      const formatted = formatSimilarityScore(score);
+
+      expect(formatted).toContain('3 files missing from your repo:');
+      expect(formatted).toContain('• missing1.txt');
+      expect(formatted).toContain('• missing2.txt');
+      expect(formatted).toContain('• missing3.txt');
+      expect(formatted).toContain('2 files only in your repo:');
+      expect(formatted).toContain('• extra1.txt');
+      expect(formatted).toContain('• extra2.txt');
     });
   });
 

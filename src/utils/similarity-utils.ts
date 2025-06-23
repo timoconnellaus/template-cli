@@ -169,11 +169,25 @@ export function findBestMatch(scores: SimilarityScore[]): SimilarityScore | null
 export function formatSimilarityScore(score: SimilarityScore): string {
   const percentage = Math.max(0, Math.round((score.score / (score.exactMatches.length * 10 + score.partialMatches.length * 5)) * 100));
   
-  return [
+  const result = [
     `📊 ${score.migrationName} (${percentage}% similarity, score: ${score.score})`,
     `   - ${score.exactMatches.length} exact file matches`,
     `   - ${score.partialMatches.length} files with minor differences`,
-    score.missingFiles.length > 0 ? `   - ${score.missingFiles.length} files missing from your repo` : '',
-    score.extraFiles.length > 0 ? `   - ${score.extraFiles.length} files only in your repo` : ''
-  ].filter(Boolean).join('\n');
+  ];
+
+  if (score.missingFiles.length > 0) {
+    result.push(`   - ${score.missingFiles.length} files missing from your repo:`);
+    score.missingFiles.forEach(file => {
+      result.push(`     • ${file}`);
+    });
+  }
+
+  if (score.extraFiles.length > 0) {
+    result.push(`   - ${score.extraFiles.length} files only in your repo:`);
+    score.extraFiles.forEach(file => {
+      result.push(`     • ${file}`);
+    });
+  }
+
+  return result.filter(Boolean).join('\n');
 }
