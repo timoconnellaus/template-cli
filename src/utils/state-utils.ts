@@ -1,0 +1,95 @@
+import { promises as fs, readdirSync } from 'fs';
+import { join } from 'path';
+import { parseMigrationFile } from './migration-utils.js';
+import { applyDiffsToContent } from './diff-utils.js';
+
+export interface MigrationInfo {
+  name: string;
+  timestamp: string;
+  path: string;
+}
+
+export function getAllMigrationDirectories(templatePath: string): MigrationInfo[] {
+  const migrationsPath = join(templatePath, 'migrations');
+  
+  try {
+    const entries = readdirSync(migrationsPath);
+    return entries
+      .filter((entry: string) => entry.includes('_'))
+      .sort()
+      .map((entry: string) => ({
+        name: entry,
+        timestamp: entry.split('_')[0],
+        path: join(migrationsPath, entry)
+      }));
+  } catch (error) {
+    return [];
+  }
+}
+
+export async function reconstructStateFromMigrations(migrationsPath: string): Promise<Record<string, string>> {
+  const state: Record<string, string> = {};
+  
+  try {
+    // Get all migration folders sorted by name (timestamp order)
+    const entries = await fs.readdir(migrationsPath);
+    const migrationFolders = entries
+      .filter(entry => entry.includes('_'))
+      .sort();
+    
+    // Apply each migration in order
+    for (const folder of migrationFolders) {
+      const migrationPath = join(migrationsPath, folder, 'migrate.ts');
+      const filesPath = join(migrationsPath, folder, '__files');
+      
+      try {
+        // Read the migration file
+        const migrationContent = await fs.readFile(migrationPath, 'utf8');
+        const migration = await parseMigrationFile(migrationContent);
+        
+        // Apply migration to state
+        for (const [filePath, entry] of Object.entries(migration)) {
+          if (entry.type === 'new') {
+            // Load content from template file
+            try {
+              const templatePath = join(filesPath, `${filePath}.template`);
+              const content = await fs.readFile(templatePath, 'utf8');
+              state[filePath] = content;
+            } catch (error) {
+              // If template file doesn't exist, skip
+            }
+          } else if (entry.type === 'delete') {
+            delete state[filePath];
+          } else if (entry.type === 'modify' && entry.diffs) {
+            // Apply diffs to existing file
+            state[filePath] = applyDiffsToContent(state[filePath] || '', entry.diffs);
+          } else if (entry.type === 'moved') {
+            // Handle file move
+            const oldPath = entry.oldPath;
+            const newPath = entry.newPath || filePath;
+            
+            if (oldPath && state[oldPath]) {
+              // Move the content from old path to new path
+              let content = state[oldPath];
+              
+              // Apply diffs if the moved file also has changes
+              if (entry.diffs && entry.diffs.length > 0) {
+                content = applyDiffsToContent(content, entry.diffs);
+              }
+              
+              state[newPath] = content;
+              delete state[oldPath];
+            }
+          }
+        }
+      } catch (error) {
+        // Skip malformed migration files
+        console.warn(`⚠️  Skipping malformed migration: ${folder}`);
+      }
+    }
+  } catch (error) {
+    // No migrations directory exists yet
+  }
+  
+  return state;
+}

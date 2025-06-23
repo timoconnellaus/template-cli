@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Common Commands
 
+### For Template Users:
+- **Initialize**: `bun run dev init <target>` - Initialize a new project from template
+- **Check Updates**: `bun run dev check` - Check for pending migrations from template
+- **Apply Updates**: `bun run dev update` - Apply pending migrations from template
+
+### For Template Developers:
 - **Generate Migration**: `bun run dev dev generate [name]` - Generate migration from current state vs last migration
+
+### Development:
 - **Build**: `bun run build` - Build to dist/ folder for production
 - **Test**: `bun run test` - Run Vitest test suite (NOT `bun test` which runs Bun's built-in runner)
 - **Test Watch**: `bun run test:watch` - Run tests in watch mode
@@ -13,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a CLI tool for generating migration files based on state differences. The main components:
 
-- **CLI Entry Point** (`index.ts`): Commander.js-based CLI with `dev generate` command
+- **CLI Entry Point** (`index.ts`): Commander.js-based CLI with user commands (`init`, `check`, `update`) and developer commands (`dev generate`)
 - **Migration Engine** (`src/migrate.ts`): Core logic that compares current state vs reconstructed state from existing migrations
 - **Output**: Creates `migrations/` directory with timestamped folders containing `migrate.ts` files
 
