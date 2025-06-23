@@ -53,13 +53,20 @@ template-cli sync --template ../my-template --path ./my-project
    - Identify the best matching migration point using `findBestMatch()`
    - Display detailed list of missing and extra files for each match
 
-5. **User Confirmation**
+5. **Interactive File Handling**
+   - **Missing Files**: Step through each missing file individually
+     - Show file preview and ask user to "Add" or "Skip" each one
+   - **Similar Files**: Handle files with differences interactively
+     - Ask user to "Replace", "Skip", or "Use Claude Code to merge" each one
+     - Claude Code integration provides intelligent merging when requested
+
+6. **User Confirmation**
    - Display detailed similarity analysis results
    - Show which migrations would be marked as applied
    - Show how many newer migrations would be available
    - Require explicit user confirmation before proceeding
 
-6. **Tracking Establishment**
+7. **Tracking Establishment**
    - Create `applied-migrations.json` marking the detected point
    - Include all migrations up to the best match as "applied"
    - Provide clear next steps for applying newer migrations
@@ -111,6 +118,23 @@ No applied-migrations.json found. Analyzing against template history...
    - 1 files missing from your repo:
      • auth/middleware.js
 
+📋 Found 1 missing files from the template:
+
+📄 Missing file: auth/middleware.js
+Content:
+module.exports = {
+  authenticateUser: (req, res, next) => {
+    // Auth logic here
+    next();
+  }
+};
+
+❓ What would you like to do with auth/middleware.js?
+❯ Add this file to my repository
+  Skip this file
+
+🔄 Found 0 files with differences.
+
 🔄 After synchronization:
    - 5 newer migrations will be available to apply
 
@@ -123,7 +147,7 @@ Continue? No
 ❌ Synchronization cancelled.
 ```
 
-**Successful Sync:**
+**Successful Sync with Interactive Choices:**
 ```
 $ template-cli sync --template ../my-template
 
@@ -131,7 +155,32 @@ $ template-cli sync --template ../my-template
 📊 Calculating similarity scores...
 
 ✅ Best match found: "2025-06-20T10-00-00_add-auth-system"
-Continue? Yes
+
+📋 Found 1 missing files from the template:
+
+📄 Missing file: auth/middleware.js
+Content:
+module.exports = { authenticateUser: (req, res, next) => next(); };
+
+❓ What would you like to do with auth/middleware.js?
+❯ Add this file to my repository
+
+✅ Added auth/middleware.js
+
+🔄 Found 1 files with differences:
+
+📝 File with differences: package.json
+
+📊 Differences detected:
+Your version: 15 lines
+Template version: 18 lines
+
+❓ How would you like to handle package.json?
+❯ Use Claude Code to intelligently merge both versions
+
+🤖 Claude Code merged package.json
+
+❓ Proceed with synchronization? Continue? Yes
 
 ✅ Sync complete!
 📝 Created applied-migrations.json with 3 applied migration(s)
@@ -166,10 +215,14 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
   // 5. Find best match
   const bestMatch = findBestMatch(scores);
   
-  // 6. User confirmation
+  // 6. Interactive file handling
+  await handleMissingFiles(bestMatch, historicalStates, targetPath, templatePath);
+  await handleSimilarFiles(bestMatch, historicalStates, userState, targetPath, templatePath);
+  
+  // 7. User confirmation
   const shouldProceed = await confirm({ message: "Continue?", default: false });
   
-  // 7. Create applied-migrations.json
+  // 8. Create applied-migrations.json
   if (shouldProceed) {
     const appliedMigrations = createAppliedMigrationsFile(templatePath, bestMatch);
     writeFileSync(appliedMigrationsPath, JSON.stringify(appliedMigrations, null, 2));
@@ -181,11 +234,16 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
 
 1. **Incremental Reconstruction**: Uses `reconstructStateIncrementally()` instead of `reconstructStateFromMigrations()` for accurate historical state building
 
-2. **Comprehensive Validation**: Checks for existing tracking, template validity, and empty repositories
+2. **Interactive File Management**: 
+   - `handleMissingFiles()`: Steps through missing files individually for user choice
+   - `handleSimilarFiles()`: Handles files with differences interactively
+   - Claude Code integration for intelligent merging when requested
 
-3. **Performance Optimized**: Handles large template histories efficiently (25+ migrations in <10s)
+3. **Comprehensive Validation**: Checks for existing tracking, template validity, and empty repositories
 
-4. **User-Centric**: Requires explicit confirmation and provides clear next steps
+4. **Performance Optimized**: Handles large template histories efficiently (25+ migrations in <10s)
+
+5. **User-Centric**: Requires explicit confirmation and provides clear next steps
 
 ### 7. Technical Considerations
 

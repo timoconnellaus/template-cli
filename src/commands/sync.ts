@@ -1,11 +1,14 @@
 import { existsSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { simpleGit, type SimpleGit } from "simple-git";
 import confirm from "@inquirer/confirm";
+import { select } from "@inquirer/prompts";
 import type { AppliedMigrationsFile } from "../utils/migration-utils.js";
 import { getAllMigrationDirectories, reconstructStateIncrementally } from "../utils/state-utils.js";
 import { getCurrentState, loadIgnorePatterns } from "../utils/file-utils.js";
 import { calculateSimilarity, findBestMatch, formatSimilarityScore, type SimilarityScore } from "../utils/similarity-utils.js";
+import { resolveConflict } from "../utils/conflict-utils.js";
+import { ensureDirectoryExists } from "../utils/file-utils.js";
 
 /**
  * Sync repository with template using historical reconstruction
@@ -106,6 +109,10 @@ export async function syncWithTemplate(templatePath: string, targetPath: string 
     console.log(`   - ${newerMigrations.length} newer migrations will be available to apply`);
   }
   
+  // Handle missing and similar files interactively
+  await handleMissingFiles(bestMatch, historicalStates, targetPath, templatePath);
+  await handleSimilarFiles(bestMatch, historicalStates, userState, targetPath, templatePath);
+  
   // Ask for confirmation
   console.log(`\n❓ Proceed with synchronization? This will:`);
   console.log(`   1. Create applied-migrations.json marking this sync point`);
@@ -170,5 +177,141 @@ export async function syncWithTemplate(templatePath: string, targetPath: string 
     }
   } catch (error) {
     // Ignore git errors - target might not be a git repository
+  }
+}
+
+/**
+ * Handle missing files interactively - ask user to add or skip each one
+ */
+async function handleMissingFiles(
+  bestMatch: SimilarityScore,
+  historicalStates: Map<string, Record<string, string>>,
+  targetPath: string,
+  templatePath: string
+): Promise<void> {
+  if (bestMatch.missingFiles.length === 0) {
+    return;
+  }
+
+  console.log(`\n📋 Found ${bestMatch.missingFiles.length} missing files from the template:`);
+  
+  const templateState = historicalStates.get(bestMatch.migrationName);
+  if (!templateState) {
+    return;
+  }
+
+  for (const filePath of bestMatch.missingFiles) {
+    console.log(`\n📄 Missing file: ${filePath}`);
+    
+    // Show preview of file content
+    const fileContent = templateState[filePath] || '';
+    const lines = fileContent.split('\n');
+    if (lines.length > 10) {
+      console.log('Preview (first 10 lines):');
+      console.log(lines.slice(0, 10).join('\n'));
+      console.log(`... (${lines.length - 10} more lines)`);
+    } else {
+      console.log('Content:');
+      console.log(fileContent);
+    }
+
+    const choice = await select({
+      message: `What would you like to do with ${filePath}?`,
+      choices: [
+        { name: 'Add this file to my repository', value: 'add' },
+        { name: 'Skip this file', value: 'skip' }
+      ]
+    });
+
+    if (choice === 'add') {
+      try {
+        const targetFilePath = join(targetPath, filePath);
+        await ensureDirectoryExists(dirname(targetFilePath));
+        await writeFileSync(targetFilePath, fileContent);
+        console.log(`✅ Added ${filePath}`);
+      } catch (error) {
+        console.error(`❌ Failed to add ${filePath}:`, error instanceof Error ? error.message : String(error));
+      }
+    } else {
+      console.log(`⏭️  Skipped ${filePath}`);
+    }
+  }
+}
+
+/**
+ * Handle similar files interactively - ask user to replace, skip, or merge with Claude Code
+ */
+async function handleSimilarFiles(
+  bestMatch: SimilarityScore,
+  historicalStates: Map<string, Record<string, string>>,
+  userState: Record<string, string>,
+  targetPath: string,
+  templatePath: string
+): Promise<void> {
+  if (bestMatch.partialMatches.length === 0) {
+    return;
+  }
+
+  console.log(`\n🔄 Found ${bestMatch.partialMatches.length} files with differences:`);
+  
+  const templateState = historicalStates.get(bestMatch.migrationName);
+  if (!templateState) {
+    return;
+  }
+
+  for (const filePath of bestMatch.partialMatches) {
+    console.log(`\n📝 File with differences: ${filePath}`);
+    
+    const userContent = userState[filePath] || '';
+    const templateContent = templateState[filePath] || '';
+    
+    // Show diff preview
+    console.log('\n📊 Differences detected:');
+    const userLines = userContent.split('\n');
+    const templateLines = templateContent.split('\n');
+    
+    console.log(`Your version: ${userLines.length} lines`);
+    console.log(`Template version: ${templateLines.length} lines`);
+    
+    const choice = await select({
+      message: `How would you like to handle ${filePath}?`,
+      choices: [
+        { name: 'Replace with template version', value: 'replace' },
+        { name: 'Skip (keep my version)', value: 'skip' },
+        { name: 'Use Claude Code to intelligently merge both versions', value: 'merge' }
+      ]
+    });
+
+    if (choice === 'replace') {
+      try {
+        const targetFilePath = join(targetPath, filePath);
+        await writeFileSync(targetFilePath, templateContent);
+        console.log(`✅ Replaced ${filePath} with template version`);
+      } catch (error) {
+        console.error(`❌ Failed to replace ${filePath}:`, error instanceof Error ? error.message : String(error));
+      }
+    } else if (choice === 'skip') {
+      console.log(`⏭️  Kept your version of ${filePath}`);
+    } else if (choice === 'merge') {
+      try {
+        // Create a mock diff to use with the conflict resolution
+        const mockDiff = `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,${userLines.length} +1,${templateLines.length} @@\n${templateLines.map(line => `+${line}`).join('\n')}`;
+        const mockError = new Error('Simulated conflict for merge');
+        
+        const resolution = await resolveConflict(filePath, userContent, mockDiff, mockError, templatePath);
+        
+        const targetFilePath = join(targetPath, filePath);
+        await writeFileSync(targetFilePath, resolution.content);
+        
+        if (resolution.action === 'claude') {
+          console.log(`🤖 Claude Code merged ${filePath}`);
+        } else {
+          console.log(`✅ Applied resolution for ${filePath}`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to merge ${filePath}:`, error instanceof Error ? error.message : String(error));
+        console.log(`⏭️  Keeping your version of ${filePath}`);
+      }
+    }
   }
 }

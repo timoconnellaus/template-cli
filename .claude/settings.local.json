@@ -14,7 +14,8 @@
       "Bash(bun:*)",
       "Bash(rg:*)",
       "Bash(node:*)",
-      "Bash(npm pack:*)"
+      "Bash(npm pack:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

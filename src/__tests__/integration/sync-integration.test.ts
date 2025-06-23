@@ -12,20 +12,30 @@ vi.mock('@inquirer/confirm', () => ({
   default: vi.fn()
 }));
 
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn()
+}));
+
 describe('sync integration tests', () => {
   let templateRepo: { path: string; cleanup: () => Promise<void> };
   let projectRepo: { path: string; cleanup: () => Promise<void> };
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let mockConfirm: any;
+  let mockSelect: any;
 
   beforeEach(async () => {
     templateRepo = await createTestRepo();
     projectRepo = await createTestRepo();
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     
-    // Setup inquirer mock
+    // Setup inquirer mocks
     const inquirer = await import('@inquirer/confirm');
     mockConfirm = vi.mocked(inquirer.default);
+    
+    const prompts = await import('@inquirer/prompts');
+    mockSelect = vi.mocked(prompts.select);
+    // Default to 'skip' for all interactive prompts to not interfere with existing tests
+    mockSelect.mockResolvedValue('skip');
   });
 
   afterEach(async () => {
