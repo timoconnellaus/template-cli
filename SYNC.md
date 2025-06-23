@@ -44,7 +44,7 @@ template-cli sync --template ../my-template --path ./my-project
    - Build a map of historical states using `reconstructStateIncrementally()`
 
 3. **User Repository Analysis**
-   - Scan the user's repository (respecting `.migrateignore`)
+   - Scan the user's repository (respecting both `.gitignore` and `.migrateignore`)
    - Create a snapshot of current file structure and contents
 
 4. **Similarity Matching**
@@ -153,7 +153,7 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
   // 2. Incremental state reconstruction
   const historicalStates = await reconstructStateIncrementally(migrationsPath);
   
-  // 3. Analyze user repository
+  // 3. Analyze user repository (respects both .gitignore and .migrateignore)
   const userState = await getCurrentState(targetPath, ignorePatterns);
   
   // 4. Calculate similarity scores for each historical state
@@ -230,6 +230,22 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
    - Provides clear next steps: "Run 'template-cli update' to apply X pending migrations"
    - Requires explicit user confirmation before making any changes
 
+## Ignore Pattern Handling
+
+The system now properly handles both `.gitignore` and `.migrateignore` patterns:
+
+### Pattern Loading Priority
+1. **Default patterns**: Built-in exclusions (migrations/, .git/, node_modules/, etc.)
+2. **`.gitignore` patterns**: Loaded from project's `.gitignore` file if it exists
+3. **`.migrateignore` patterns**: Loaded from project's `.migrateignore` file if it exists
+
+### Override Behavior
+- `.migrateignore` patterns can override `.gitignore` patterns using negation (`!pattern`)
+- Example: If `.gitignore` contains `.env*`, but `.migrateignore` contains `!.env.example`, then `.env.example` will be included in migrations while other `.env*` files remain excluded
+
+### Migration Generation
+When generating migrations with `bun run dev generate`, files matching either `.gitignore` or `.migrateignore` patterns are excluded from the migration, ensuring that sensitive or build-generated files don't accidentally get included in template updates.
+
 ## Benefits
 
 This historical reconstruction approach:
@@ -238,3 +254,4 @@ This historical reconstruction approach:
 - Integrates seamlessly with existing update mechanism
 - Provides clear visibility into the sync process
 - Minimizes manual intervention and guesswork
+- Respects both `.gitignore` and `.migrateignore` patterns to prevent unwanted files in migrations

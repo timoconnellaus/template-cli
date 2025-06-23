@@ -2,28 +2,48 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 
 export async function loadIgnorePatterns(projectPath: string): Promise<string[]> {
-  const ignoreFilePath = join(projectPath, '.migrateignore');
+  const migrateIgnorePath = join(projectPath, '.migrateignore');
+  const gitIgnorePath = join(projectPath, '.gitignore');
   
+  const defaultPatterns = [
+    'migrations/**',
+    '.git/**', 
+    'node_modules/**',
+    '.DS_Store',
+    '*.log',
+    '.env*',
+    '.migrateignore',
+    'bun.lock',
+    '.claude/**'
+  ];
+  
+  const allPatterns = [...defaultPatterns];
+  
+  // Load .gitignore patterns first
   try {
-    const content = await fs.readFile(ignoreFilePath, 'utf8');
-    return content
+    const gitIgnoreContent = await fs.readFile(gitIgnorePath, 'utf8');
+    const gitIgnorePatterns = gitIgnoreContent
       .split('\n')
       .map(line => line.trim())
-      .filter(line => line && !line.startsWith('#')); // Remove empty lines and comments
+      .filter(line => line && !line.startsWith('#'));
+    allPatterns.push(...gitIgnorePatterns);
   } catch (error) {
-    // If .migrateignore doesn't exist, return default patterns
-    return [
-      'migrations/**',
-      '.git/**', 
-      'node_modules/**',
-      '.DS_Store',
-      '*.log',
-      '.env*',
-      '.migrateignore',
-      'bun.lock',
-      '.claude/**'
-    ];
+    // .gitignore doesn't exist or can't be read, continue
   }
+  
+  // Load .migrateignore patterns (these can override .gitignore patterns)
+  try {
+    const migrateIgnoreContent = await fs.readFile(migrateIgnorePath, 'utf8');
+    const migrateIgnorePatterns = migrateIgnoreContent
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+    allPatterns.push(...migrateIgnorePatterns);
+  } catch (error) {
+    // .migrateignore doesn't exist, use only default + gitignore patterns
+  }
+  
+  return allPatterns;
 }
 
 export function shouldIgnoreFile(filePath: string, ignorePatterns: string[]): boolean {
