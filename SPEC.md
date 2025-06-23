@@ -18,18 +18,22 @@ The Template Update CLI is a development tool that generates migration files bas
 ```
 src/
 ├── __tests__/              # Test files
+│   ├── commands/           # Command-level tests
+│   ├── utils/              # Utility function tests
+│   └── integration/        # Integration tests
 ├── commands/               # Command implementations
 │   ├── generate.ts         # Migration generation command (for template developers)
 │   ├── init.ts            # Template initialization command (for template users)
 │   ├── check.ts           # Check pending migrations command (for template users)
 │   └── update.ts          # Apply pending migrations command (for template users)
 ├── utils/                  # Shared utilities
-│   ├── diff-utils.ts       # Line-by-line diff calculations
+│   ├── diff-utils.ts       # Unified diff generation and application
 │   ├── difference-utils.ts # Migration difference detection
 │   ├── file-utils.ts       # File system operations
 │   ├── migration-utils.ts  # Migration file handling
 │   ├── state-utils.ts      # State reconstruction
-│   └── template-utils.ts   # Template operations
+│   ├── template-utils.ts   # Template operations
+│   └── conflict-utils.ts   # Interactive conflict resolution
 └── migrate.ts              # Main export file
 ```
 
@@ -328,6 +332,7 @@ interface AppliedMigration {
 - **Missing Applied Migrations File**: Clear error message directing user to run `init` first
 - **Invalid Template Path**: Error when template referenced in `applied-migrations.json` doesn't exist
 - **Migration Application Failure**: Stops on first error, maintains consistency by updating tracking file incrementally
+- **Diff Application Conflicts**: Interactive resolution when diffs can't be applied due to local changes
 - **Git Repository Issues**: Gracefully handles non-git repositories or git errors
 
 ## User Interaction
@@ -344,6 +349,34 @@ Before initializing from template:
 - Asks for user confirmation
 - Allows cancellation
 
+### Conflict Resolution
+When applying migrations, if a unified diff cannot be applied due to local changes:
+
+1. **Conflict Detection**: The system validates context lines and content before applying diffs
+2. **Interactive Resolution**: Prompts user with conflict details and two options:
+   - **Option 1**: "Keep my version" - Preserves current file content
+   - **Option 2**: "Use template" - Applies template changes by reconstructing expected content
+3. **Graceful Continuation**: After resolving conflict, continues applying remaining migration entries
+4. **User Feedback**: Shows clear messages about which choice was made for each file
+
+**Example Conflict Prompt**:
+```
+❌ Failed to apply diff to config.txt
+Error: Context lines don't match. Expected: "original line 2", Found: "user modified line 2"
+
+Choose how to resolve this conflict:
+1) Keep my version (preserve your local changes)
+2) Use template version (apply template changes)
+
+Your choice (1 or 2): 
+```
+
+**Conflict Scenarios**:
+- User modified lines that template diff expects to find unchanged
+- User added/removed lines that break diff context validation
+- File structure changes that invalidate diff line numbers
+- Content encoding differences between user changes and template expectations
+
 ## Testing
 
 ### Test Structure
@@ -357,12 +390,16 @@ The test suite is organized into focused test files:
 - `migration-utils.test.ts` - Migration parsing and writing
 - `template-utils.test.ts` - Template copying and migration application
 - `difference-utils.test.ts` - State difference detection
+- `conflict-utils.test.ts` - Interactive conflict resolution functionality
 
 **Command Tests** (`src/__tests__/commands/`):
 - `generate.test.ts` - Migration generation functionality
 - `init.test.ts` - Project initialization from templates
 - `check.test.ts` - Checking pending migrations
-- `update.test.ts` - Applying pending migrations
+- `update.test.ts` - Applying pending migrations with conflict resolution
+
+**Integration Tests** (`src/__tests__/integration/`):
+- `conflict-resolution.test.ts` - End-to-end conflict resolution scenarios
 
 ### Test Coverage
 - Pattern matching and ignore file handling
@@ -370,9 +407,11 @@ The test suite is organized into focused test files:
 - Migration generation with all change types
 - Template initialization with and without migrations
 - Checking for and applying pending migrations
+- Interactive conflict resolution scenarios
 - Error conditions and edge cases
 - Interactive prompt mocking for non-interactive testing
 - File system operations and git integration
+- Context validation and diff failure detection
 
 ## Performance Considerations
 
