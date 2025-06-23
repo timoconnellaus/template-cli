@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { generateMigrations } from './src/migrate.js';
+import { generateMigration } from './src/migrate.js';
 
 const program = new Command();
 
@@ -15,15 +15,14 @@ const devCommand = program
   .description('Development commands');
 
 devCommand
-  .command('migrate')
-  .description('Generate migration files based on git commits')
+  .command('generate [name]')
+  .description('Generate migration files based on current state vs last migration')
   .option('-p, --path <path>', 'Path to generate migrations in', process.cwd())
-  .action(async (options) => {
+  .action(async (name, options) => {
     try {
-      await generateMigrations(options.path);
-      console.log('✅ Migrations generated successfully');
+      await generateMigration(options.path, name);
     } catch (error) {
-      console.error('❌ Error generating migrations:', error.message);
+      console.error('❌ Error generating migration:', error.message);
       process.exit(1);
     }
   });

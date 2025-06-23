@@ -9,7 +9,11 @@
       "Bash(git commit:*)",
       "Bash(rm:*)",
       "Bash(bun add:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__ide__executeCode",
+      "Bash(bun:*)",
+      "Bash(rg:*)",
+      "Bash(node:*)"
     ],
     "deny": []
   }

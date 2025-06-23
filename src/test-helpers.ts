@@ -87,152 +87,38 @@ export async function readMigrationFile(
   const migrationPath = join(repoPath, 'migrations', migrationFolder, 'migrate.ts');
   const content = await fs.readFile(migrationPath, 'utf8');
   
-  // Extract the migration object from the file - now it uses template literals
+  // Extract the migration object from the file - now it uses JSON format
   const match = content.match(/export const migration = \{(.*)\} as const;/s);
   if (!match || !match[1]) {
     throw new Error('Could not parse migration file');
   }
   
-  // Parse the migration entries manually since they use template literals
-  const migrationContent = match[1].trim();
-  const result: any = {};
+  // Use eval to parse the object since it's JSON with proper formatting
+  // This is safe because we control the migration file generation
+  const migrationContent = `{${match[1]}}`;
   
-  // Parse each key-value pair by finding complete entries
-  let i = 0;
-  while (i < migrationContent.length) {
-    // Skip whitespace and newlines
-    while (i < migrationContent.length && /\s/.test(migrationContent[i]!)) {
-      i++;
-    }
-    
-    if (i >= migrationContent.length) break;
-    
-    // Find the key (should start with quote)
-    if (migrationContent[i] !== '"') {
-      i++;
-      continue;
-    }
-    
-    // Extract key
-    i++; // skip opening quote
-    let key = '';
-    while (i < migrationContent.length && migrationContent[i] !== '"') {
-      key += migrationContent[i];
-      i++;
-    }
-    i++; // skip closing quote
-    
-    // Skip to colon
-    while (i < migrationContent.length && migrationContent[i] !== ':') {
-      i++;
-    }
-    i++; // skip colon
-    
-    // Skip whitespace
-    while (i < migrationContent.length && /\s/.test(migrationContent[i]!)) {
-      i++;
-    }
-    
-    // Parse value
-    if (i >= migrationContent.length) break;
-    
-    if (migrationContent[i] === '`') {
-      // Template literal
-      i++; // skip opening backtick
-      let value = '';
-      while (i < migrationContent.length && migrationContent[i] !== '`') {
-        if (migrationContent[i] === '\\' && i + 1 < migrationContent.length) {
-          // Handle escape sequences
-          i++;
-          if (migrationContent[i] === '`') {
-            value += '`';
-          } else if (migrationContent[i] === '\\') {
-            value += '\\';
-          } else if (migrationContent[i] === '$' && i + 1 < migrationContent.length && migrationContent[i + 1] === '{') {
-            value += '${';
-            i++; // skip the '{'
-          } else {
-            value += '\\' + migrationContent[i];
-          }
-        } else {
-          value += migrationContent[i];
-        }
-        i++;
-      }
-      i++; // skip closing backtick
-      result[key] = value;
-    } else if (migrationContent[i] === '[') {
-      // Array
-      const arrayItems = [];
-      i++; // skip opening bracket
-      
-      while (i < migrationContent.length && migrationContent[i] !== ']') {
-        // Skip whitespace and commas
-        while (i < migrationContent.length && /[\s,]/.test(migrationContent[i]!)) {
-          i++;
-        }
-        
-        if (i >= migrationContent.length || migrationContent[i] === ']') break;
-        
-        if (migrationContent[i] === '`') {
-          // Template literal in array
-          i++; // skip opening backtick
-          let value = '';
-          while (i < migrationContent.length && migrationContent[i] !== '`') {
-            if (migrationContent[i] === '\\' && i + 1 < migrationContent.length) {
-              i++;
-              if (migrationContent[i] === '`') {
-                value += '`';
-              } else if (migrationContent[i] === '\\') {
-                value += '\\';
-              } else if (migrationContent[i] === '$' && i + 1 < migrationContent.length && migrationContent[i + 1] === '{') {
-                value += '${';
-                i++; // skip the '{'
-              } else {
-                value += '\\' + migrationContent[i];
-              }
-            } else {
-              value += migrationContent[i];
-            }
-            i++;
-          }
-          i++; // skip closing backtick
-          arrayItems.push(value);
-        }
-      }
-      i++; // skip closing bracket
-      result[key] = arrayItems;
-    } else if (migrationContent[i] === '{') {
-      // JSON object (like {deleted: true})
-      let depth = 0;
-      let jsonStr = '';
-      while (i < migrationContent.length && (depth > 0 || migrationContent[i] !== ',')) {
-        if (migrationContent[i] === '{') depth++;
-        else if (migrationContent[i] === '}') depth--;
-        jsonStr += migrationContent[i];
-        i++;
-        if (depth === 0 && migrationContent[i-1] === '}') break;
-      }
-      result[key] = JSON.parse(jsonStr);
-    }
-    
-    // Skip to next entry (past comma)
-    while (i < migrationContent.length && migrationContent[i] !== ',' && migrationContent[i] !== '}') {
-      i++;
-    }
-    if (i < migrationContent.length && migrationContent[i] === ',') {
-      i++; // skip comma
-    }
+  try {
+    return eval(`(${migrationContent})`);
+  } catch (error) {
+    throw new Error(`Could not parse migration content: ${error}`);
   }
-  
-  return result;
+}
+
+export async function readTemplateFile(
+  repoPath: string,
+  migrationFolder: string,
+  filePath: string
+): Promise<string> {
+  const templatePath = join(repoPath, 'migrations', migrationFolder, '__files', `${filePath}.template`);
+  return await fs.readFile(templatePath, 'utf8');
 }
 
 export async function listMigrationFolders(repoPath: string): Promise<string[]> {
   try {
     const migrationsPath = join(repoPath, 'migrations');
     const entries = await fs.readdir(migrationsPath);
-    return entries.filter(entry => entry.match(/^\d+_/)).sort();
+    // Look for timestamp pattern: YYYY-MM-DDTHH-mm-ss_name
+    return entries.filter(entry => entry.match(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}_/)).sort();
   } catch (error) {
     return [];
   }
