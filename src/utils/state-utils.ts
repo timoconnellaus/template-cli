@@ -1,7 +1,7 @@
 import { promises as fs, readdirSync } from 'fs';
 import { join } from 'path';
 import { parseMigrationFile } from './migration-utils.js';
-import { applyDiffsToContent } from './diff-utils.js';
+import { applyDiffsToContent, applyUnifiedDiff } from './diff-utils.js';
 
 export interface MigrationInfo {
   name: string;
@@ -60,9 +60,21 @@ export async function reconstructStateFromMigrations(migrationsPath: string): Pr
             }
           } else if (entry.type === 'delete') {
             delete state[filePath];
-          } else if (entry.type === 'modify' && entry.diffs) {
+          } else if (entry.type === 'modify') {
             // Apply diffs to existing file
-            state[filePath] = applyDiffsToContent(state[filePath] || '', entry.diffs);
+            if (entry.diffFile) {
+              // New unified diff format
+              try {
+                const diffPath = join(filesPath, entry.diffFile);
+                const diffContent = await fs.readFile(diffPath, 'utf8');
+                state[filePath] = applyUnifiedDiff(state[filePath] || '', diffContent);
+              } catch (error) {
+                console.warn(`⚠️  Could not read diff file: ${entry.diffFile}`);
+              }
+            } else if (entry.diffs) {
+              // Legacy inline diff format
+              state[filePath] = applyDiffsToContent(state[filePath] || '', entry.diffs);
+            }
           } else if (entry.type === 'moved') {
             // Handle file move
             const oldPath = entry.oldPath;
@@ -73,7 +85,17 @@ export async function reconstructStateFromMigrations(migrationsPath: string): Pr
               let content = state[oldPath];
               
               // Apply diffs if the moved file also has changes
-              if (entry.diffs && entry.diffs.length > 0) {
+              if (entry.diffFile) {
+                // New unified diff format
+                try {
+                  const diffPath = join(filesPath, entry.diffFile);
+                  const diffContent = await fs.readFile(diffPath, 'utf8');
+                  content = applyUnifiedDiff(content, diffContent);
+                } catch (error) {
+                  console.warn(`⚠️  Could not read diff file: ${entry.diffFile}`);
+                }
+              } else if (entry.diffs && entry.diffs.length > 0) {
+                // Legacy inline diff format
                 content = applyDiffsToContent(content, entry.diffs);
               }
               

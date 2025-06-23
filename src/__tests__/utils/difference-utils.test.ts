@@ -10,13 +10,13 @@ describe('difference-utils', () => {
         'config.json': '{"setting": "value"}'
       };
       
-      const differences = await calculateDifferences(reconstructedState, actualState);
+      const { migration } = await calculateDifferences(reconstructedState, actualState);
       
-      expect(differences['new-file.txt']).toEqual({
+      expect(migration['new-file.txt']).toEqual({
         type: 'new',
         path: 'new-file.txt'
       });
-      expect(differences['config.json']).toEqual({
+      expect(migration['config.json']).toEqual({
         type: 'new',
         path: 'config.json'
       });
@@ -42,13 +42,13 @@ describe('difference-utils', () => {
       };
       const actualState = {};
       
-      const differences = await mockedCalculateDifferences(reconstructedState, actualState);
+      const { migration } = await mockedCalculateDifferences(reconstructedState, actualState);
       
-      expect(differences['old-file.txt']).toEqual({
+      expect(migration['old-file.txt']).toEqual({
         type: 'delete',
         path: 'old-file.txt'
       });
-      expect(differences['another-file.txt']).toEqual({
+      expect(migration['another-file.txt']).toEqual({
         type: 'delete',
         path: 'another-file.txt'
       });
@@ -66,20 +66,19 @@ describe('difference-utils', () => {
         'unchanged.txt': 'same content'
       };
       
-      const differences = await calculateDifferences(reconstructedState, actualState);
+      const { migration, diffContents } = await calculateDifferences(reconstructedState, actualState);
       
-      expect(differences['test.txt']).toEqual({
+      expect(migration['test.txt']).toEqual({
         type: 'modify',
-        diffs: expect.any(Array)
+        diffFile: expect.stringMatching(/\.diff$/)
       });
-      expect(differences['unchanged.txt']).toBeUndefined();
+      expect(migration['unchanged.txt']).toBeUndefined();
       
-      // Check that diffs are calculated
-      const diffs = differences['test.txt'].diffs!;
-      expect(diffs.length).toBeGreaterThan(0);
-      expect(diffs[0].operation).toBe('replace');
-      expect(diffs[0].oldContent).toBe('original content');
-      expect(diffs[0].newContent).toBe('modified content');
+      // Check that diff file is created
+      const diffFile = migration['test.txt'].diffFile!;
+      expect(diffContents[diffFile]).toContain('@@'); // Unified diff format
+      expect(diffContents[diffFile]).toContain('-original content');
+      expect(diffContents[diffFile]).toContain('+modified content');
     });
 
     it('should detect mixed changes', async () => {
@@ -93,17 +92,17 @@ describe('difference-utils', () => {
         'new-file.txt': 'brand new'
       };
       
-      const differences = await calculateDifferences(reconstructedState, actualState);
+      const { migration } = await calculateDifferences(reconstructedState, actualState);
       
       // Should not include unchanged file
-      expect(differences['keep-unchanged.txt']).toBeUndefined();
+      expect(migration['keep-unchanged.txt']).toBeUndefined();
       
       // Should detect modification
-      expect(differences['modify-this.txt']).toBeDefined();
-      expect(differences['modify-this.txt'].type).toBe('modify');
+      expect(migration['modify-this.txt']).toBeDefined();
+      expect(migration['modify-this.txt'].type).toBe('modify');
       
       // Should detect new file
-      expect(differences['new-file.txt']).toEqual({
+      expect(migration['new-file.txt']).toEqual({
         type: 'new',
         path: 'new-file.txt'
       });
@@ -111,19 +110,19 @@ describe('difference-utils', () => {
 
     it('should handle empty states', async () => {
       // Both states empty
-      let differences = await calculateDifferences({}, {});
-      expect(differences).toEqual({});
+      let { migration } = await calculateDifferences({}, {});
+      expect(migration).toEqual({});
       
       // Only reconstructed state empty
-      differences = await calculateDifferences({}, { 'file.txt': 'content' });
-      expect(differences['file.txt']).toEqual({
+      ({ migration } = await calculateDifferences({}, { 'file.txt': 'content' }));
+      expect(migration['file.txt']).toEqual({
         type: 'new',
         path: 'file.txt'
       });
       
       // Only actual state empty
-      differences = await calculateDifferences({ 'file.txt': 'content' }, {});
-      expect(differences['file.txt']).toEqual({
+      ({ migration } = await calculateDifferences({ 'file.txt': 'content' }, {}));
+      expect(migration['file.txt']).toEqual({
         type: 'delete',
         path: 'file.txt'
       });
@@ -137,21 +136,21 @@ describe('difference-utils', () => {
         'multiline.txt': 'line 1\nmodified line 2\nline 3\nnew line 4'
       };
       
-      const differences = await calculateDifferences(reconstructedState, actualState);
+      const { migration, diffContents } = await calculateDifferences(reconstructedState, actualState);
       
-      expect(differences['multiline.txt']).toEqual({
+      expect(migration['multiline.txt']).toEqual({
         type: 'modify',
-        diffs: expect.any(Array)
+        diffFile: expect.stringMatching(/\.diff$/)
       });
       
-      const diffs = differences['multiline.txt'].diffs!;
-      expect(diffs.length).toBeGreaterThan(0);
+      const diffFile = migration['multiline.txt'].diffFile!;
+      const diffContent = diffContents[diffFile];
+      expect(diffContent).toContain('@@'); // Unified diff format
       
       // Should detect changes to line 2 and addition of line 4
-      const replaceOps = diffs.filter(d => d.operation === 'replace');
-      const insertOps = diffs.filter(d => d.operation === 'insert');
-      
-      expect(replaceOps.length + insertOps.length).toBeGreaterThan(0);
+      expect(diffContent).toContain('-line 2');
+      expect(diffContent).toContain('+modified line 2');
+      expect(diffContent).toContain('+new line 4');
     });
 
     it('should handle files with only whitespace differences', async () => {
@@ -162,15 +161,16 @@ describe('difference-utils', () => {
         'whitespace.txt': 'content\n'
       };
       
-      const differences = await calculateDifferences(reconstructedState, actualState);
+      const { migration, diffContents } = await calculateDifferences(reconstructedState, actualState);
       
-      expect(differences['whitespace.txt']).toEqual({
+      expect(migration['whitespace.txt']).toEqual({
         type: 'modify',
-        diffs: expect.any(Array)
+        diffFile: expect.stringMatching(/\.diff$/)
       });
       
-      const diffs = differences['whitespace.txt'].diffs!;
-      expect(diffs.length).toBeGreaterThan(0);
+      const diffFile = migration['whitespace.txt'].diffFile!;
+      const diffContent = diffContents[diffFile];
+      expect(diffContent).toContain('@@'); // Unified diff format
     });
   });
 });

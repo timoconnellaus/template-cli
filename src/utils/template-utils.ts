@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { readMigrationFromPath, type AppliedMigration, type AppliedMigrationsFile } from './migration-utils.js';
-import { applyDiffsToContent } from './diff-utils.js';
+import { applyDiffsToContent, applyUnifiedDiff } from './diff-utils.js';
 import { ensureDirectoryExists } from './file-utils.js';
 
 export async function applyAllMigrations(templatePath: string, targetPath: string): Promise<void> {
@@ -58,7 +58,19 @@ export async function applyMigration(templatePath: string, targetPath: string, m
         
       case 'modify':
         // Apply diffs to existing file
-        if (entry.diffs) {
+        if (entry.diffFile) {
+          // New unified diff format
+          try {
+            const diffPath = join(migrationPath, '__files', entry.diffFile);
+            const diffContent = await fs.readFile(diffPath, 'utf8');
+            const currentContent = await fs.readFile(targetFilePath, 'utf8');
+            const newContent = applyUnifiedDiff(currentContent, diffContent);
+            await fs.writeFile(targetFilePath, newContent, 'utf8');
+          } catch (error) {
+            console.warn(`⚠️  Could not apply diff file: ${entry.diffFile}`);
+          }
+        } else if (entry.diffs) {
+          // Legacy inline diff format
           const currentContent = await fs.readFile(targetFilePath, 'utf8');
           const newContent = applyDiffsToContent(currentContent, entry.diffs);
           await fs.writeFile(targetFilePath, newContent, 'utf8');
@@ -85,7 +97,19 @@ export async function applyMigration(templatePath: string, targetPath: string, m
             await fs.rename(oldFilePath, newFilePath);
             
             // Apply diffs if there are content changes
-            if (entry.diffs) {
+            if (entry.diffFile) {
+              // New unified diff format
+              try {
+                const diffPath = join(migrationPath, '__files', entry.diffFile);
+                const diffContent = await fs.readFile(diffPath, 'utf8');
+                const currentContent = await fs.readFile(newFilePath, 'utf8');
+                const newContent = applyUnifiedDiff(currentContent, diffContent);
+                await fs.writeFile(newFilePath, newContent, 'utf8');
+              } catch (error) {
+                console.warn(`⚠️  Could not apply diff file: ${entry.diffFile}`);
+              }
+            } else if (entry.diffs) {
+              // Legacy inline diff format
               const currentContent = await fs.readFile(newFilePath, 'utf8');
               const newContent = applyDiffsToContent(currentContent, entry.diffs);
               await fs.writeFile(newFilePath, newContent, 'utf8');

@@ -1,9 +1,15 @@
 import { select, confirm } from '@inquirer/prompts';
-import { calculateLineDiffs } from './diff-utils.js';
+import { generateUnifiedDiff } from './diff-utils.js';
 import { type Migration } from './migration-utils.js';
 
-export async function calculateDifferences(oldState: Record<string, string>, newState: Record<string, string>): Promise<Migration> {
+export interface DifferenceResult {
+  migration: Migration;
+  diffContents: Record<string, string>; // diffFile -> diff content
+}
+
+export async function calculateDifferences(oldState: Record<string, string>, newState: Record<string, string>): Promise<DifferenceResult> {
   const migration: Migration = {};
+  const diffContents: Record<string, string> = {};
   
   // Find new and modified files
   for (const [filePath, newContent] of Object.entries(newState)) {
@@ -16,13 +22,15 @@ export async function calculateDifferences(oldState: Record<string, string>, new
         path: filePath
       };
     } else if (oldContent !== newContent) {
-      // Modified file - calculate line-by-line diffs
-      const diffs = calculateLineDiffs(oldContent, newContent);
-      if (diffs.length > 0) {
+      // Modified file - generate unified diff
+      const diffContent = generateUnifiedDiff(oldContent, newContent, filePath, filePath);
+      if (diffContent.includes('@@')) { // Only if there are actual changes
+        const diffFileName = `${filePath}.diff`;
         migration[filePath] = {
           type: 'modify',
-          diffs: diffs
+          diffFile: diffFileName
         };
+        diffContents[diffFileName] = diffContent;
       }
     }
   }
@@ -68,13 +76,24 @@ export async function calculateDifferences(oldState: Record<string, string>, new
             };
           } else {
             // Move with changes
-            const diffs = calculateLineDiffs(oldContent || '', newContent || '');
-            migration[moveTarget] = {
-              type: 'moved',
-              oldPath: deletedPath,
-              newPath: moveTarget,
-              diffs: diffs
-            };
+            const diffContent = generateUnifiedDiff(oldContent || '', newContent || '', deletedPath, moveTarget);
+            if (diffContent.includes('@@')) {
+              const diffFileName = `${moveTarget}.diff`;
+              migration[moveTarget] = {
+                type: 'moved',
+                oldPath: deletedPath,
+                newPath: moveTarget,
+                diffFile: diffFileName
+              };
+              diffContents[diffFileName] = diffContent;
+            } else {
+              // No actual changes detected
+              migration[moveTarget] = {
+                type: 'moved',
+                oldPath: deletedPath,
+                newPath: moveTarget
+              };
+            }
           }
           
           // Remove this file from the newFiles list so it's not offered again
@@ -95,5 +114,5 @@ export async function calculateDifferences(oldState: Record<string, string>, new
     };
   }
   
-  return migration;
+  return { migration, diffContents };
 }

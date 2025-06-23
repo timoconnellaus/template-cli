@@ -21,7 +21,7 @@ export async function generateMigration(projectPath: string, name?: string): Pro
   const actualState = await getCurrentState(projectPath, ignorePatterns);
   
   // Calculate differences
-  const migration = await calculateDifferences(reconstructedState, actualState);
+  const { migration, diffContents } = await calculateDifferences(reconstructedState, actualState);
   
   // Check if there are any changes
   if (Object.keys(migration).length === 0) {
@@ -42,7 +42,7 @@ export async function generateMigration(projectPath: string, name?: string): Pro
   const filesDir = join(migrationFolderPath, '__files');
   await fs.mkdir(filesDir, { recursive: true });
   
-  // Save template files for new files
+  // Save template files for new files and diff files for modifications
   for (const [filePath, entry] of Object.entries(migration)) {
     if (entry.type === 'new') {
       const content = actualState[filePath] || '';
@@ -50,6 +50,13 @@ export async function generateMigration(projectPath: string, name?: string): Pro
       await fs.mkdir(join(filesDir, filePath, '..'), { recursive: true });
       await fs.writeFile(templatePath, content, 'utf8');
     }
+  }
+  
+  // Save diff files
+  for (const [diffFileName, diffContent] of Object.entries(diffContents)) {
+    const diffPath = join(filesDir, diffFileName);
+    await fs.mkdir(join(filesDir, diffFileName, '..'), { recursive: true });
+    await fs.writeFile(diffPath, diffContent, 'utf8');
   }
   
   // Write migration file

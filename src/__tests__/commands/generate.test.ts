@@ -54,15 +54,17 @@ describe('generate command', () => {
     const migration = await readMigrationFile(testRepo.path, folders[1]!);
     expect(migration['test.txt']).toEqual({
       type: 'modify',
-      diffs: expect.any(Array)
+      diffFile: 'test.txt.diff'
     });
     
-    // Check diff content
-    const diffs = migration['test.txt'].diffs!;
-    expect(diffs).toHaveLength(1);
-    expect(diffs[0].operation).toBe('replace');
-    expect(diffs[0].oldContent).toBe('original content');
-    expect(diffs[0].newContent).toBe('modified content');
+    // Check diff file exists and contains expected content
+    const { readFile } = await import('fs/promises');
+    const diffPath = join(testRepo.path, 'migrations', folders[1]!, '__files', 'test.txt.diff');
+    const diffContent = await readFile(diffPath, 'utf8');
+    
+    expect(diffContent).toContain('@@'); // Unified diff format
+    expect(diffContent).toContain('-original content');
+    expect(diffContent).toContain('+modified content');
   });
 
   it('should create migration for file deletion', async () => {

@@ -7,7 +7,8 @@ export interface MigrationEntry {
   path?: string;
   oldPath?: string;  // for moved files
   newPath?: string;  // for moved files
-  diffs?: DiffChange[];
+  diffFile?: string; // path to .diff file for modify/moved operations
+  diffs?: DiffChange[]; // deprecated - kept for backward compatibility
 }
 
 export interface Migration {
