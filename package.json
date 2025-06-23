@@ -1,8 +1,14 @@
 {
   "name": "@timoaus/template-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A CLI tool for template-based project initialization and synchronization with intelligent migration tracking",
-  "keywords": ["template", "cli", "migration", "project-initialization", "sync"],
+  "keywords": [
+    "template",
+    "cli",
+    "migration",
+    "project-initialization",
+    "sync"
+  ],
   "author": "Tim <tim@example.com>",
   "license": "MIT",
   "repository": {
@@ -22,7 +28,7 @@
   "files": [
     "dist/**/*",
     "README.md",
-    "SPEC.md", 
+    "SPEC.md",
     "SYNC.md",
     "CLAUDE.md",
     "CHANGELOG.md",
@@ -36,7 +42,7 @@
     "prepublishOnly": "npm run test && npm run build",
     "prepare": "npm run build",
     "version:patch": "npm version patch",
-    "version:minor": "npm version minor", 
+    "version:minor": "npm version minor",
     "version:major": "npm version major",
     "release:patch": "npm run version:patch && git push && git push --tags",
     "release:minor": "npm run version:minor && git push && git push --tags",
