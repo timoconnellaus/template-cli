@@ -17,6 +17,9 @@ export async function generateMigrations(projectPath: string): Promise<void> {
   // Ensure migrations directory exists
   await fs.mkdir(migrationsPath, { recursive: true });
   
+  // Load ignore patterns
+  const ignorePatterns = await loadIgnorePatterns(projectPath);
+  
   // Get all commits
   const log = await git.log();
   const commits = log.all;
@@ -47,7 +50,7 @@ export async function generateMigrations(projectPath: string): Promise<void> {
     }
     
     // Generate migration for this commit
-    const migration = await generateMigrationForCommit(git, commit, i === commits.length - 1);
+    const migration = await generateMigrationForCommit(git, commit, i === commits.length - 1, ignorePatterns);
     
     // Create migration folder and file
     await fs.mkdir(migrationFolderPath, { recursive: true });
@@ -58,7 +61,8 @@ export async function generateMigrations(projectPath: string): Promise<void> {
 async function generateMigrationForCommit(
   git: SimpleGit,
   commit: any,
-  isFirstCommit: boolean
+  isFirstCommit: boolean,
+  ignorePatterns: string[]
 ): Promise<Migration> {
   const migration: Migration = {};
   
@@ -68,6 +72,11 @@ async function generateMigrationForCommit(
     const fileList = files.split('\n').filter(f => f.trim() !== '');
     
     for (const file of fileList) {
+      // Skip if file matches ignore patterns
+      if (shouldIgnoreFile(file, ignorePatterns)) {
+        continue;
+      }
+      
       try {
         const content = await git.show([`${commit.hash}:${file}`]);
         migration[file] = content;
@@ -88,6 +97,11 @@ async function generateMigrationForCommit(
     for (const line of lines) {
       const [status, ...fileParts] = line.split('\t');
       const file = fileParts.join('\t');
+      
+      // Skip if file matches ignore patterns
+      if (shouldIgnoreFile(file, ignorePatterns)) {
+        continue;
+      }
       
       if (status?.startsWith('D')) {
         // File deleted
@@ -127,8 +141,30 @@ async function generateMigrationForCommit(
 }
 
 async function writeMigrationFile(filePath: string, migration: Migration): Promise<void> {
+  const formatValue = (value: string | string[] | { deleted: true }): string => {
+    if (typeof value === 'string') {
+      // Use template literal for string content
+      return '`' + value.replace(/`/g, '\\`').replace(/\${/g, '\\${') + '`';
+    } else if (Array.isArray(value)) {
+      // Format diff lines as array
+      return '[' + value.map(line => 
+        '`' + line.replace(/`/g, '\\`').replace(/\${/g, '\\${') + '`'
+      ).join(',\n    ') + ']';
+    } else {
+      // Handle deleted files
+      return JSON.stringify(value);
+    }
+  };
+
+  const migrationEntries = Object.entries(migration).map(([key, value]) => {
+    const formattedValue = formatValue(value);
+    return `  "${key}": ${formattedValue}`;
+  }).join(',\n');
+
   const migrationContent = `// Migration generated automatically
-export const migration = ${JSON.stringify(migration, null, 2)} as const;
+export const migration = {
+${migrationEntries}
+} as const;
 `;
   
   await fs.writeFile(filePath, migrationContent, 'utf8');
@@ -167,6 +203,52 @@ async function cleanupOldLatestFolders(migrationsPath: string, commits: any[]): 
   } catch (error) {
     // Ignore errors in cleanup
   }
+}
+
+async function loadIgnorePatterns(projectPath: string): Promise<string[]> {
+  const ignoreFilePath = join(projectPath, '.migrateignore');
+  
+  try {
+    const content = await fs.readFile(ignoreFilePath, 'utf8');
+    return content
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#')); // Remove empty lines and comments
+  } catch (error) {
+    // If .migrateignore doesn't exist, return default patterns
+    return [
+      'migrations/**',
+      '.git/**',
+      'node_modules/**',
+      '.DS_Store',
+      '*.log',
+      '.env*'
+    ];
+  }
+}
+
+function shouldIgnoreFile(filePath: string, ignorePatterns: string[]): boolean {
+  for (const pattern of ignorePatterns) {
+    if (matchesPattern(filePath, pattern)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function matchesPattern(filePath: string, pattern: string): boolean {
+  // Convert glob pattern to regex
+  let regexPattern = pattern
+    .replace(/\./g, '\\.')          // Escape dots
+    .replace(/\*\*/g, '.*')         // ** matches any path
+    .replace(/\*/g, '[^/]*')        // * matches anything except path separator
+    .replace(/\?/g, '.');           // ? matches single character
+  
+  // Add anchors
+  regexPattern = '^' + regexPattern + '$';
+  
+  const regex = new RegExp(regexPattern);
+  return regex.test(filePath);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
