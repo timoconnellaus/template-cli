@@ -5,6 +5,7 @@ import { generateMigration } from "./src/commands/generate";
 import { initializeFromTemplate } from "./src/commands/init";
 import { checkPendingMigrations } from "./src/commands/check";
 import { updateFromTemplate } from "./src/commands/update";
+import { syncWithTemplate } from "./src/commands/sync";
 
 const program = new Command();
 
@@ -46,6 +47,20 @@ program
       await updateFromTemplate(options.path);
     } catch (error) {
       console.error("❌ Error updating from template:", error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command("sync")
+  .description("Sync existing repository with template using historical reconstruction")
+  .requiredOption("-t, --template <path>", "Path to template directory")
+  .option("-p, --path <path>", "Path to repository to sync", process.cwd())
+  .action(async (options) => {
+    try {
+      await syncWithTemplate(options.template, options.path);
+    } catch (error) {
+      console.error("❌ Error syncing with template:", error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });

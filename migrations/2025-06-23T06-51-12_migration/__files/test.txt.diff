@@ -1,6 +1,0 @@
---- test.txt
-+++ test.txt
-@@ -1,2 +1,2 @@
- This is a line of text
--Another line
-+Another line 2
