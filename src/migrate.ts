@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { join, resolve, dirname } from 'path';
 import { select, confirm } from '@inquirer/prompts';
 
 export interface DiffChange {
@@ -25,6 +25,17 @@ export interface Migration {
 
 export interface MigrationFile {
   migration: Migration;
+}
+
+export interface AppliedMigration {
+  name: string;
+  appliedAt: string;
+}
+
+export interface AppliedMigrationsFile {
+  version: string;
+  template: string;
+  appliedMigrations: AppliedMigration[];
 }
 
 export async function generateMigration(projectPath: string, name?: string): Promise<void> {
@@ -354,36 +365,6 @@ function calculateLineDiffs(oldContent: string, newContent: string): DiffChange[
   return diffs;
 }
 
-function applyDiffsToContent(content: string, diffs: DiffChange[]): string {
-  const lines = content.split('\n');
-  
-  // Sort diffs by line number in reverse order to avoid index shifting
-  const sortedDiffs = [...diffs].sort((a, b) => {
-    const aLine = a.startLine || a.afterLine || 0;
-    const bLine = b.startLine || b.afterLine || 0;
-    return bLine - aLine;
-  });
-  
-  for (const diff of sortedDiffs) {
-    if (diff.operation === 'replace') {
-      const startIdx = (diff.startLine || 1) - 1;
-      const endIdx = (diff.endLine || diff.startLine || 1) - 1;
-      const newLines = (diff.newContent || '').split('\n');
-      lines.splice(startIdx, endIdx - startIdx + 1, ...newLines);
-    } else if (diff.operation === 'insert') {
-      const afterIdx = diff.afterLine || 0;
-      const newLines = (diff.newContent || '').split('\n');
-      lines.splice(afterIdx, 0, ...newLines);
-    } else if (diff.operation === 'delete') {
-      const startIdx = (diff.startLine || 1) - 1;
-      const endIdx = (diff.endLine || diff.startLine || 1) - 1;
-      lines.splice(startIdx, endIdx - startIdx + 1);
-    }
-  }
-  
-  return lines.join('\n');
-}
-
 async function parseMigrationFile(content: string): Promise<Migration> {
   // Extract the migration object from the file
   const match = content.match(/export const migration = \{(.*)\} as const;/s);
@@ -540,6 +521,269 @@ function matchesGitignorePattern(filePath: string, pattern: string): boolean {
 
 // Legacy function name for backward compatibility during transition
 export const generateMigrations = generateMigration;
+
+export async function initializeFromTemplate(templatePath: string, targetPath: string): Promise<void> {
+  const resolvedTemplatePath = resolve(templatePath);
+  const resolvedTargetPath = resolve(targetPath);
+  
+  // Validate template path exists
+  try {
+    const templateStat = await fs.stat(resolvedTemplatePath);
+    if (!templateStat.isDirectory()) {
+      throw new Error(`Template path is not a directory: ${resolvedTemplatePath}`);
+    }
+  } catch (error) {
+    throw new Error(`Template directory does not exist: ${resolvedTemplatePath}`);
+  }
+  
+  // Check if template has migrations
+  const migrationsPath = join(resolvedTemplatePath, 'migrations');
+  let hasMigrations = false;
+  try {
+    const migrationsStat = await fs.stat(migrationsPath);
+    hasMigrations = migrationsStat.isDirectory();
+  } catch (error) {
+    // No migrations directory, that's ok
+  }
+  
+  // Validate target path - must not exist or be empty
+  let targetExists = false;
+  try {
+    const targetStat = await fs.stat(resolvedTargetPath);
+    if (targetStat.isDirectory()) {
+      const entries = await fs.readdir(resolvedTargetPath);
+      if (entries.length > 0) {
+        throw new Error(`Target directory is not empty: ${resolvedTargetPath}`);
+      }
+      targetExists = true;
+    } else {
+      throw new Error(`Target path exists but is not a directory: ${resolvedTargetPath}`);
+    }
+  } catch (error: any) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+    // Target doesn't exist, we'll create it
+  }
+  
+  // Ask for confirmation
+  const templateName = resolvedTemplatePath.split('/').pop() || 'template';
+  const shouldProceed = await confirm({
+    message: `Initialize project from template "${templateName}" into "${resolvedTargetPath}"?`,
+    default: true
+  });
+  
+  if (!shouldProceed) {
+    console.log('❌ Initialization cancelled');
+    return;
+  }
+  
+  // Create target directory if it doesn't exist
+  if (!targetExists) {
+    await fs.mkdir(resolvedTargetPath, { recursive: true });
+  }
+  
+  console.log('🚀 Initializing project...');
+  
+  if (hasMigrations) {
+    // Apply all migrations in order
+    await applyAllMigrations(resolvedTemplatePath, resolvedTargetPath);
+  } else {
+    // Just copy the template as-is (excluding migrations directory and other meta files)
+    await copyTemplate(resolvedTemplatePath, resolvedTargetPath);
+    
+    // Create initial applied-migrations.json
+    const appliedMigrationsFile: AppliedMigrationsFile = {
+      version: '1.0.0',
+      template: resolvedTemplatePath,
+      appliedMigrations: []
+    };
+    
+    await fs.writeFile(
+      join(resolvedTargetPath, 'applied-migrations.json'),
+      JSON.stringify(appliedMigrationsFile, null, 2),
+      'utf8'
+    );
+  }
+  
+  console.log(`✅ Project initialized successfully in ${resolvedTargetPath}`);
+}
+
+async function applyAllMigrations(templatePath: string, targetPath: string): Promise<void> {
+  const migrationsPath = join(templatePath, 'migrations');
+  const appliedMigrations: AppliedMigration[] = [];
+  
+  // Get all migration folders sorted by timestamp
+  const entries = await fs.readdir(migrationsPath, { withFileTypes: true });
+  const migrationFolders = entries
+    .filter(entry => entry.isDirectory() && entry.name.match(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}_/))
+    .map(entry => entry.name)
+    .sort();
+  
+  console.log(`📦 Applying ${migrationFolders.length} migrations...`);
+  
+  for (const migrationFolder of migrationFolders) {
+    console.log(`   Applying ${migrationFolder}...`);
+    await applyMigration(templatePath, targetPath, migrationFolder);
+    
+    appliedMigrations.push({
+      name: migrationFolder,
+      appliedAt: new Date().toISOString()
+    });
+  }
+  
+  // Create applied-migrations.json
+  const appliedMigrationsFile: AppliedMigrationsFile = {
+    version: '1.0.0',
+    template: templatePath,
+    appliedMigrations
+  };
+  
+  await fs.writeFile(
+    join(targetPath, 'applied-migrations.json'),
+    JSON.stringify(appliedMigrationsFile, null, 2),
+    'utf8'
+  );
+}
+
+async function applyMigration(templatePath: string, targetPath: string, migrationFolder: string): Promise<void> {
+  const migrationPath = join(templatePath, 'migrations', migrationFolder);
+  const migrationFile = await readMigrationFromPath(migrationPath);
+  
+  for (const [filePath, entry] of Object.entries(migrationFile.migration)) {
+    const targetFilePath = join(targetPath, filePath);
+    
+    switch (entry.type) {
+      case 'new':
+        // Copy file from __files directory
+        const templateFilePath = join(migrationPath, '__files', `${filePath}.template`);
+        await ensureDirectoryExists(dirname(targetFilePath));
+        await fs.copyFile(templateFilePath, targetFilePath);
+        break;
+        
+      case 'modify':
+        // Apply diffs to existing file
+        if (entry.diffs) {
+          const currentContent = await fs.readFile(targetFilePath, 'utf8');
+          const newContent = applyDiffsToContent(currentContent, entry.diffs);
+          await fs.writeFile(targetFilePath, newContent, 'utf8');
+        }
+        break;
+        
+      case 'delete':
+        // Remove file
+        try {
+          await fs.unlink(targetFilePath);
+        } catch (error) {
+          // File might not exist, that's ok
+        }
+        break;
+        
+      case 'moved':
+        // Handle file moves
+        if (entry.oldPath && entry.newPath) {
+          const oldFilePath = join(targetPath, entry.oldPath);
+          const newFilePath = join(targetPath, entry.newPath);
+          
+          try {
+            await ensureDirectoryExists(dirname(newFilePath));
+            await fs.rename(oldFilePath, newFilePath);
+            
+            // Apply diffs if there are content changes
+            if (entry.diffs) {
+              const currentContent = await fs.readFile(newFilePath, 'utf8');
+              const newContent = applyDiffsToContent(currentContent, entry.diffs);
+              await fs.writeFile(newFilePath, newContent, 'utf8');
+            }
+          } catch (error) {
+            // File might not exist for move, that's ok
+          }
+        }
+        break;
+    }
+  }
+}
+
+async function copyTemplate(templatePath: string, targetPath: string): Promise<void> {
+  const entries = await fs.readdir(templatePath, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    // Skip migrations directory and other meta files
+    if (entry.name === 'migrations' || entry.name === 'applied-migrations.json' || entry.name === '.git') {
+      continue;
+    }
+    
+    const sourcePath = join(templatePath, entry.name);
+    const destPath = join(targetPath, entry.name);
+    
+    if (entry.isDirectory()) {
+      await fs.mkdir(destPath, { recursive: true });
+      await copyTemplate(sourcePath, destPath);
+    } else {
+      await fs.copyFile(sourcePath, destPath);
+    }
+  }
+}
+
+async function readMigrationFromPath(migrationPath: string): Promise<MigrationFile> {
+  const migrationFilePath = join(migrationPath, 'migrate.ts');
+  const content = await fs.readFile(migrationFilePath, 'utf8');
+  
+  // Extract the migration object from the file
+  const match = content.match(/export const migration = \{(.*)\} as const;/s);
+  if (!match || !match[1]) {
+    throw new Error('Could not parse migration file');
+  }
+  
+  // Use eval to parse the object since it's our own generated format
+  const migrationContent = `{${match[1]}}`;
+  
+  try {
+    const migration = eval(`(${migrationContent})`);
+    return { migration };
+  } catch (error) {
+    throw new Error(`Could not parse migration content: ${error}`);
+  }
+}
+
+function applyDiffsToContent(content: string, diffs: DiffChange[]): string {
+  const lines = content.split('\n');
+  
+  // Apply diffs in reverse order to maintain line numbers
+  const sortedDiffs = [...diffs].sort((a, b) => b.startLine - a.startLine);
+  
+  for (const diff of sortedDiffs) {
+    switch (diff.operation) {
+      case 'replace':
+        if (diff.endLine) {
+          lines.splice(diff.startLine - 1, diff.endLine - diff.startLine + 1, diff.newContent || '');
+        }
+        break;
+        
+      case 'insert':
+        if (diff.afterLine !== undefined) {
+          lines.splice(diff.afterLine, 0, diff.newContent || '');
+        }
+        break;
+        
+      case 'delete':
+        if (diff.endLine) {
+          lines.splice(diff.startLine - 1, diff.endLine - diff.startLine + 1);
+        }
+        break;
+    }
+  }
+  
+  return lines.join('\n');
+}
+
+async function ensureDirectoryExists(dirPath: string): Promise<void> {
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+  } catch (error) {
+    // Directory might already exist, that's ok
+  }
+}
 
 // Export internal functions for testing
 export { matchesGitignorePattern, shouldIgnoreFile, calculateLineDiffs };
