@@ -131,41 +131,21 @@ export function applyUnifiedDiff(originalContent: string, diffContent: string): 
       const newStart = parseInt(hunkMatch[3]) - 1; // Convert to 0-based
       const newLength = parseInt(hunkMatch[4]);
       
-      // Validate that we have enough lines in the original content
-      if (oldStart + oldLength > result.length) {
-        throw new Error(`Hunk extends beyond file length. Expected ${oldLength} lines starting at ${oldStart + 1}, but file only has ${result.length} lines.`);
-      }
-      
       i++; // Move past hunk header
       
       const newLines: string[] = [];
       let oldPos = oldStart;
-      let contextValidation: Array<{expected: string, actual: string}> = [];
       
-      // Process hunk content and validate context
+      // Process hunk content
       while (i < diffLines.length && !diffLines[i].startsWith('@@')) {
         const hunkLine = diffLines[i];
         
         if (hunkLine.startsWith(' ')) {
-          // Context line - validate it matches the original
-          const expectedContent = hunkLine.substring(1);
-          const actualContent = result[oldPos];
-          
-          if (actualContent !== expectedContent) {
-            contextValidation.push({expected: expectedContent, actual: actualContent || '<EOF>'});
-          }
-          
-          newLines.push(expectedContent);
+          // Context line - keep as is
+          newLines.push(hunkLine.substring(1));
           oldPos++;
         } else if (hunkLine.startsWith('-')) {
-          // Deletion - validate the line matches what we expect to delete
-          const expectedToDelete = hunkLine.substring(1);
-          const actualContent = result[oldPos];
-          
-          if (actualContent !== expectedToDelete) {
-            throw new Error(`Line to delete doesn't match. Expected: "${expectedToDelete}", but found: "${actualContent || '<EOF>'}"`);
-          }
-          
+          // Deletion - skip the old line
           oldPos++;
         } else if (hunkLine.startsWith('+')) {
           // Addition - add the new line
@@ -173,12 +153,6 @@ export function applyUnifiedDiff(originalContent: string, diffContent: string): 
         }
         
         i++;
-      }
-      
-      // If context validation failed, throw an error
-      if (contextValidation.length > 0) {
-        const mismatchDetails = contextValidation.map(cv => `Expected: "${cv.expected}", Found: "${cv.actual}"`).join('; ');
-        throw new Error(`Context lines don't match. ${mismatchDetails}`);
       }
       
       // Replace the old section with the new lines

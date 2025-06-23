@@ -1,46 +1,61 @@
 # Migration ignore patterns
+
 # This file specifies which files should be excluded from migrations
 
 # Dependencies and builds
+
 node_modules/**
 dist/**
-build/**
+build/\*\*
 
 # Generated files
-*.log
-*.tmp
-*.cache
+
+_.log
+_.tmp
+\*.cache
 
 # Environment files
-.env*
+
+.env\*
 !.env.example
 
 # OS files
+
 .DS_Store
 Thumbs.db
 
 # IDE files
+
 .vscode/**
 .idea/**
 
 # Migration folders themselves
-migrations/**
+
+migrations/\*\*
 
 # Migration ignore file itself (to prevent recursion)
+
 .migrateignore
 
 # Git files
-.git/**
+
+.git/\*\*
 .gitignore
 
 # Lock files (these change frequently and aren't usually important for migrations)
+
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
 # Test coverage
-coverage/**
+
+coverage/\*\*
 
 # Documentation (comment out if you want to track docs)
-# docs/**
-# *.md
+
+# docs/\*\*
+
+# \*.md
+
+test
