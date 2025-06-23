@@ -13,7 +13,8 @@
       "mcp__ide__executeCode",
       "Bash(bun:*)",
       "Bash(rg:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm pack:*)"
     ],
     "deny": []
   }

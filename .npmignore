@@ -1,0 +1,45 @@
+# Source files (only publish built dist/)
+*.ts
+!*.d.ts
+src/
+index.ts
+
+# Development files
+.bun
+node_modules/
+bun.lock
+.env*
+
+# Test files
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+vitest.config.ts
+
+# Development tools
+.vscode/
+.idea/
+*.log
+
+# Git and CI
+.git/
+.github/
+.gitignore
+
+# Temporary files
+tmp/
+temp/
+.DS_Store
+*.swp
+*.swo
+
+# Migration artifacts (don't publish test migrations)
+migrations/
+
+# Local configuration
+.claude/
+
+# Test artifacts
+test/
+coverage/
+test-*
