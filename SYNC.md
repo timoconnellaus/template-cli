@@ -51,6 +51,7 @@ template-cli sync --template ../my-template --path ./my-project
    - Compare user's repository against each historical template state
    - Score each comparison using comprehensive similarity algorithm
    - Identify the best matching migration point using `findBestMatch()`
+   - Display detailed list of missing and extra files for each match
 
 5. **User Confirmation**
    - Display detailed similarity analysis results
@@ -104,8 +105,11 @@ No applied-migrations.json found. Analyzing against template history...
 ✅ Best match found: "2025-06-20T10-00-00_add-auth-system"
    - 12 exact file matches
    - 3 files with minor differences  
-   - 2 files only in your repo
-   - 1 files missing from your repo
+   - 2 files only in your repo:
+     • custom-config.js
+     • my-custom-script.sh
+   - 1 files missing from your repo:
+     • auth/middleware.js
 
 🔄 After synchronization:
    - 5 newer migrations will be available to apply
@@ -220,6 +224,7 @@ async function syncWithTemplate(templatePath: string, targetPath: string = proce
 
 3. **Clear Communication**
    - Shows detailed similarity analysis with file-by-file breakdown
+   - Lists specific missing and extra files for better understanding
    - Explains exactly which migration point was detected as best match
    - Displays how many migrations will be marked as applied vs available
    - Provides clear next steps: "Run 'template-cli update' to apply X pending migrations"

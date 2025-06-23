@@ -6,10 +6,16 @@ import { initializeFromTemplate } from "./src/commands/init";
 import { checkPendingMigrations } from "./src/commands/check";
 import { updateFromTemplate } from "./src/commands/update";
 import { syncWithTemplate } from "./src/commands/sync";
+import { checkForUpdates, getCurrentVersion } from "./src/utils/version-utils";
 
 const program = new Command();
 
-program.name("dev").description("Development utilities CLI").version("1.0.0");
+// Check for updates in the background (non-blocking)
+checkForUpdates().catch(() => {
+  // Silently ignore update check failures
+});
+
+program.name("template-cli").description("Template-based project initialization and synchronization with intelligent migration tracking").version(getCurrentVersion());
 
 // Template user commands (top-level)
 program
