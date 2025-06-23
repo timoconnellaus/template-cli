@@ -19,8 +19,10 @@ The Template Update CLI is a development tool that generates migration files bas
 src/
 ├── __tests__/              # Test files
 ├── commands/               # Command implementations
-│   ├── generate.ts         # Migration generation command
-│   └── init.ts            # Template initialization command
+│   ├── generate.ts         # Migration generation command (for template developers)
+│   ├── init.ts            # Template initialization command (for template users)
+│   ├── check.ts           # Check pending migrations command (for template users)
+│   └── update.ts          # Apply pending migrations command (for template users)
 ├── utils/                  # Shared utilities
 │   ├── diff-utils.ts       # Line-by-line diff calculations
 │   ├── difference-utils.ts # Migration difference detection
@@ -33,7 +35,49 @@ src/
 
 ## Commands
 
-### 1. Generate Command
+The CLI provides two categories of commands:
+
+- **Template User Commands** (top-level): For developers using templates to initialize and update projects
+- **Template Developer Commands** (under `dev`): For template maintainers creating and managing templates
+
+### Template User Commands
+
+#### 1. Init Command
+
+**Usage**: `bun run dev init <target> [-t, --template <path>]`
+
+**Purpose**: Initialize a new project from a template, applying all migrations if they exist.
+
+#### 2. Check Command
+
+**Usage**: `bun run dev check [-p, --path <path>]`
+
+**Purpose**: Check for pending migrations from the template that haven't been applied to the current project.
+
+**Process Flow**:
+1. **Read Applied Migrations**: Load `applied-migrations.json` to get template path and applied migration history
+2. **Scan Template**: Get all available migrations from the template's `migrations/` directory
+3. **Compare**: Identify migrations that exist in template but not in applied history
+4. **Report**: Display pending migrations with timestamps and names
+5. **Git Check**: Optionally check if template repository has newer commits
+
+#### 3. Update Command
+
+**Usage**: `bun run dev update [-p, --path <path>]`
+
+**Purpose**: Apply pending migrations from the template to the current project.
+
+**Process Flow**:
+1. **Read Applied Migrations**: Load `applied-migrations.json` to get template path and applied migration history
+2. **Find Pending**: Identify migrations that haven't been applied yet
+3. **Apply Sequentially**: Apply each pending migration in chronological order
+4. **Update Tracking**: Add newly applied migrations to `applied-migrations.json`
+5. **Error Handling**: Stop on first error to maintain consistency
+6. **Git Status**: Show changed files after successful application
+
+### Template Developer Commands
+
+#### 1. Generate Command
 
 **Usage**: `bun run dev dev generate [name] [-p, --path <path>]`
 
@@ -91,12 +135,6 @@ export const migration = {
 } as const;
 ```
 
-### 2. Init Command
-
-**Usage**: `bun run dev dev init <target> [-t, --template <path>]`
-
-**Purpose**: Initialize a new project from a template, applying all migrations if they exist.
-
 #### Process Flow
 
 1. **Validate Template**: Ensure template directory exists and is readable
@@ -118,6 +156,41 @@ When a template has migrations:
 When no migrations exist:
 1. Copy all template files (excluding `.git`, `migrations/`, etc.)
 2. Create empty `applied-migrations.json`
+
+## Command Workflow
+
+### Template Developer Workflow
+1. **Create/Modify Template**: Make changes to the template project
+2. **Generate Migration**: Run `bun run dev dev generate <name>` to create migration files
+3. **Commit Changes**: Commit both the changes and generated migrations to version control
+
+### Template User Workflow
+1. **Initialize Project**: Run `bun run dev init <project-name>` to create new project from template
+2. **Check for Updates**: Periodically run `bun run dev check` to see if template has new migrations
+3. **Apply Updates**: Run `bun run dev update` to apply pending migrations to the project
+4. **Review Changes**: Check git status and review applied changes before committing
+
+### Applied Migrations Tracking
+
+The `applied-migrations.json` file tracks:
+- **Template Source**: Path to the original template
+- **Migration History**: List of applied migrations with timestamps
+- **Version**: File format version for future compatibility
+
+Example:
+```json
+{
+  "version": "1.0.0",
+  "template": "/path/to/template",
+  "appliedMigrations": [
+    {
+      "name": "2025-06-23T10-30-00_initial-setup",
+      "timestamp": "2025-06-23T10-30-00",
+      "appliedAt": "2025-06-23T15:45:00.000Z"
+    }
+  ]
+}
+```
 
 ## File Handling
 
@@ -215,6 +288,7 @@ interface AppliedMigrationsFile {
 
 interface AppliedMigration {
   name: string;
+  timestamp: string;
   appliedAt: string;
 }
 ```
@@ -230,6 +304,12 @@ interface AppliedMigration {
 - **Template Not Found**: Throws error with clear message
 - **Target Not Empty**: Throws error to prevent accidental overwrites
 - **Permission Errors**: Propagates filesystem errors
+
+### Check/Update Errors
+- **Missing Applied Migrations File**: Clear error message directing user to run `init` first
+- **Invalid Template Path**: Error when template referenced in `applied-migrations.json` doesn't exist
+- **Migration Application Failure**: Stops on first error, maintains consistency by updating tracking file incrementally
+- **Git Repository Issues**: Gracefully handles non-git repositories or git errors
 
 ## User Interaction
 
@@ -248,16 +328,32 @@ Before initializing from template:
 ## Testing
 
 ### Test Structure
-- **Unit Tests**: Individual function testing
-- **Integration Tests**: End-to-end migration generation and application
-- **Test Utilities**: Helper functions for creating test repositories
+
+The test suite is organized into focused test files:
+
+**Utility Tests** (`src/__tests__/utils/`):
+- `file-utils.test.ts` - Pattern matching and file filtering
+- `diff-utils.test.ts` - Line diff calculations
+- `state-utils.test.ts` - Migration directory handling and state reconstruction
+- `migration-utils.test.ts` - Migration parsing and writing
+- `template-utils.test.ts` - Template copying and migration application
+- `difference-utils.test.ts` - State difference detection
+
+**Command Tests** (`src/__tests__/commands/`):
+- `generate.test.ts` - Migration generation functionality
+- `init.test.ts` - Project initialization from templates
+- `check.test.ts` - Checking pending migrations
+- `update.test.ts` - Applying pending migrations
 
 ### Test Coverage
 - Pattern matching and ignore file handling
 - Diff calculation and application
 - Migration generation with all change types
 - Template initialization with and without migrations
+- Checking for and applying pending migrations
 - Error conditions and edge cases
+- Interactive prompt mocking for non-interactive testing
+- File system operations and git integration
 
 ## Performance Considerations
 
