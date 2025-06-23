@@ -5,10 +5,16 @@ import { updateFromTemplate } from '../../commands/update.js';
 import { generateMigration } from '../../commands/generate.js';
 import { createTestRepo } from '../test-helpers.js';
 import * as readline from 'readline';
+import { spawn } from 'child_process';
 
 // Mock readline for conflict resolution
 vi.mock('readline', () => ({
   createInterface: vi.fn(),
+}));
+
+// Mock child_process for Claude CLI calls
+vi.mock('child_process', () => ({
+  spawn: vi.fn(),
 }));
 
 describe('update command', () => {
@@ -546,5 +552,179 @@ describe('update command', () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('🎉 Successfully applied 3 migration(s).')
     );
+  });
+
+  it('should calculate user diff correctly using migration history', async () => {
+    // This test directly verifies that the user diff calculation works properly
+    // by setting up a realistic scenario with migration history
+    
+    // 1. Create initial template state
+    await writeFile(join(templateRepo.path, 'config.js'), 'export const config = {\n  version: "1.0.0",\n  debug: false\n};');
+    await generateMigration(templateRepo.path, 'initial');
+
+    // 2. Template evolution: add new config option
+    await writeFile(join(templateRepo.path, 'config.js'), 'export const config = {\n  version: "1.0.0",\n  debug: false,\n  timeout: 5000\n};');
+    await generateMigration(templateRepo.path, 'add-timeout');
+
+    // 3. Set up project with baseline state (first migration applied)
+    await writeFile(join(projectRepo.path, 'config.js'), 'export const config = {\n  version: "1.0.0",\n  debug: false\n};');
+    
+    const { getAllMigrationDirectories } = await import('../../utils/state-utils.js');
+    const migrations = getAllMigrationDirectories(templateRepo.path);
+    
+    const appliedMigrationsFile = {
+      version: '1.0.0',
+      template: templateRepo.path,
+      appliedMigrations: [
+        {
+          name: migrations[0]!.name,
+          timestamp: migrations[0]!.timestamp,
+          appliedAt: new Date().toISOString()
+        }
+      ]
+    };
+    
+    await writeFile(
+      join(projectRepo.path, 'applied-migrations.json'),
+      JSON.stringify(appliedMigrationsFile, null, 2)
+    );
+
+    // 4. User makes their own changes to the file
+    const userModifiedContent = 'export const config = {\n  version: "2.0.0",  // User updated version\n  debug: true,       // User enabled debug\n  apiKey: "secret"   // User added API key\n};';
+    await writeFile(join(projectRepo.path, 'config.js'), userModifiedContent);
+
+    // 5. Test the user diff calculation directly
+    const conflictUtils = await import('../../utils/conflict-utils.js');
+    const userDiff = await conflictUtils.calculateUserDiff(
+      'config.js',
+      userModifiedContent,
+      templateRepo.path
+    );
+
+    // 6. Verify the user diff shows what the user changed from the baseline
+    expect(userDiff).not.toBeNull();
+    expect(userDiff).toContain('--- config.js.baseline');
+    expect(userDiff).toContain('+++ config.js');
+    expect(userDiff).toContain('-  version: "1.0.0",');
+    expect(userDiff).toContain('+  version: "2.0.0",  // User updated version');
+    expect(userDiff).toContain('-  debug: false');
+    expect(userDiff).toContain('+  debug: true,       // User enabled debug');
+    expect(userDiff).toContain('+  apiKey: "secret"   // User added API key');
+
+    // 7. Also test that when user content matches baseline, no diff is returned
+    const baselineContent = 'export const config = {\n  version: "1.0.0",\n  debug: false\n};';
+    const noDiff = await conflictUtils.calculateUserDiff(
+      'config.js',
+      baselineContent,
+      templateRepo.path
+    );
+    expect(noDiff).toBeNull();
+  });
+
+  it('should handle user diff calculation for newly created files', async () => {
+    // Test case where user creates a file that doesn't exist in template baseline
+    
+    // 1. Create minimal template
+    await writeFile(join(templateRepo.path, 'README.md'), '# Template');
+    await generateMigration(templateRepo.path, 'initial');
+
+    // 2. Template adds a config file
+    await writeFile(join(templateRepo.path, 'config.json'), '{"template": true}');
+    await generateMigration(templateRepo.path, 'add-config');
+
+    // 3. Set up project with first migration applied
+    await writeFile(join(projectRepo.path, 'README.md'), '# Template');
+    
+    const { getAllMigrationDirectories } = await import('../../utils/state-utils.js');
+    const migrations = getAllMigrationDirectories(templateRepo.path);
+    
+    const appliedMigrationsFile = {
+      version: '1.0.0',
+      template: templateRepo.path,
+      appliedMigrations: [
+        {
+          name: migrations[0]!.name,
+          timestamp: migrations[0]!.timestamp,
+          appliedAt: new Date().toISOString()
+        }
+      ]
+    };
+    
+    await writeFile(
+      join(projectRepo.path, 'applied-migrations.json'),
+      JSON.stringify(appliedMigrationsFile, null, 2)
+    );
+
+    // 4. User creates a different file (truly new, not in template)
+    await writeFile(join(projectRepo.path, 'user-config.json'), '{"user": true, "customized": "yes"}');
+
+    // 5. Test the user diff calculation directly for a truly new file
+    const conflictUtils = await import('../../utils/conflict-utils.js');
+    const userDiff = await conflictUtils.calculateUserDiff(
+      'user-config.json',
+      '{"user": true, "customized": "yes"}',
+      templateRepo.path
+    );
+
+    // 6. Verify user diff shows file as newly created by user
+    expect(userDiff).not.toBeNull();
+    expect(userDiff).toContain('--- /dev/null');
+    expect(userDiff).toContain('+++ user-config.json');
+    expect(userDiff).toContain('+{"user": true, "customized": "yes"}');
+  });
+
+  it('should handle user diff calculation when user removes lines', async () => {
+    // Test case where user removes content from the baseline
+    
+    // 1. Create template with multi-line file
+    await writeFile(join(templateRepo.path, 'script.sh'), '#!/bin/bash\necho "line 1"\necho "line 2"\necho "line 3"\necho "line 4"');
+    await generateMigration(templateRepo.path, 'initial');
+
+    // 2. Template modifies the script (adds a line)
+    await writeFile(join(templateRepo.path, 'script.sh'), '#!/bin/bash\necho "line 1"\necho "line 2"\necho "line 3"\necho "line 4"\necho "template added"');
+    await generateMigration(templateRepo.path, 'update-script');
+
+    // 3. Set up project with baseline state
+    await writeFile(join(projectRepo.path, 'script.sh'), '#!/bin/bash\necho "line 1"\necho "line 2"\necho "line 3"\necho "line 4"');
+    
+    const { getAllMigrationDirectories } = await import('../../utils/state-utils.js');
+    const migrations = getAllMigrationDirectories(templateRepo.path);
+    
+    const appliedMigrationsFile = {
+      version: '1.0.0',
+      template: templateRepo.path,
+      appliedMigrations: [
+        {
+          name: migrations[0]!.name,
+          timestamp: migrations[0]!.timestamp,
+          appliedAt: new Date().toISOString()
+        }
+      ]
+    };
+    
+    await writeFile(
+      join(projectRepo.path, 'applied-migrations.json'),
+      JSON.stringify(appliedMigrationsFile, null, 2)
+    );
+
+    // 4. User removes some lines and adds their own
+    await writeFile(join(projectRepo.path, 'script.sh'), '#!/bin/bash\necho "line 1"\n# User removed line 2 and 3\necho "line 4"\necho "user custom line"');
+
+    // 5. Test the user diff calculation
+    const conflictUtils = await import('../../utils/conflict-utils.js');
+    const userDiff = await conflictUtils.calculateUserDiff(
+      'script.sh',
+      '#!/bin/bash\necho "line 1"\n# User removed line 2 and 3\necho "line 4"\necho "user custom line"',
+      templateRepo.path
+    );
+
+    // 6. Verify user diff shows the removals and additions
+    expect(userDiff).not.toBeNull();
+    expect(userDiff).toContain('--- script.sh.baseline');
+    expect(userDiff).toContain('+++ script.sh');
+    expect(userDiff).toContain('-echo "line 2"');
+    expect(userDiff).toContain('-echo "line 3"');
+    expect(userDiff).toContain('+# User removed line 2 and 3');
+    expect(userDiff).toContain('+echo "user custom line"');
   });
 });

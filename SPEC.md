@@ -266,6 +266,27 @@ When applying unified diffs to reconstruct state:
    - **Addition lines** (`+`): Add to result
 4. **Reconstruct Content**: Build final file content from processed hunks
 
+### User Diff Calculation
+
+For intelligent conflict resolution, the system calculates what changes the user made from the baseline template state:
+
+1. **Baseline Reconstruction**: Uses existing migration history to reconstruct the file state after all applied migrations
+2. **User Change Detection**: Compares current file content with reconstructed baseline to identify user modifications
+3. **Diff Generation**: Creates unified diff showing user's intentional changes from the template baseline
+4. **Context Provision**: Provides both user and template diffs to Claude for intelligent merging
+
+**Process Flow**:
+1. **Load Applied Migrations**: Read `applied-migrations.json` to determine which migrations have been applied
+2. **Reconstruct Baseline**: Apply all historical migrations in order to recreate the baseline state
+3. **Calculate User Diff**: Generate unified diff from baseline to current content
+4. **Conflict Resolution**: Provide both user diff and template diff to Claude Code CLI for intelligent merging
+
+**Benefits**:
+- **Preserves User Intent**: Claude understands what the user specifically changed vs. what was inherited from template
+- **Intelligent Merging**: Enables AI to find solutions that incorporate both user customizations and template improvements  
+- **Context Awareness**: Provides full picture of conflicting changes for better decision making
+- **Minimal User Intervention**: Often resolves conflicts automatically without requiring manual merge decisions
+
 
 ## Benefits of Unified Diff Format
 
@@ -353,22 +374,52 @@ Before initializing from template:
 When applying migrations, if a unified diff cannot be applied due to local changes:
 
 1. **Conflict Detection**: The system validates context lines and content before applying diffs
-2. **Interactive Resolution**: Prompts user with conflict details and two options:
+2. **Interactive Resolution**: Prompts user with conflict details and three options:
    - **Option 1**: "Keep my version" - Preserves current file content
    - **Option 2**: "Use template" - Applies template changes by reconstructing expected content
+   - **Option 3**: "Use Claude Code CLI" - Intelligently merges both user and template changes using AI
 3. **Graceful Continuation**: After resolving conflict, continues applying remaining migration entries
 4. **User Feedback**: Shows clear messages about which choice was made for each file
 
+#### Claude Code CLI Integration
+
+When users choose Option 3, the system leverages Claude Code CLI for intelligent conflict resolution:
+
+1. **User Diff Calculation**: Reconstructs the baseline state from applied migrations and calculates what the user changed from that baseline
+2. **Enhanced Context**: Provides Claude with both the user's changes and the template's intended changes
+3. **Intelligent Merging**: Claude receives detailed context including:
+   - Current file content (with user modifications)
+   - Template diff (what the template wants to change)
+   - User diff (what the user changed from the baseline)
+   - Clear instructions to preserve user intent while incorporating template improvements
+4. **AI-Powered Resolution**: Claude makes intelligent decisions about how to merge conflicting changes, often finding creative solutions that preserve both user customizations and template updates
+
 **Example Conflict Prompt**:
 ```
-❌ Failed to apply diff to config.txt
+🔧 Merge Conflict Detected
+==================================================
+File: config.txt
 Error: Context lines don't match. Expected: "original line 2", Found: "user modified line 2"
+==================================================
 
-Choose how to resolve this conflict:
-1) Keep my version (preserve your local changes)
-2) Use template version (apply template changes)
+📄 Current Content:
+------------------------------
+user modified line 2
 
-Your choice (1 or 2): 
+📝 Template Diff (failed to apply):
+------------------------------
+--- config.txt
++++ config.txt
+@@ -1,1 +1,1 @@
+-original line 2
++template updated line 2
+
+💡 How would you like to resolve this conflict?
+1. Keep my version (current content)
+2. Use template version (apply diff forcefully if possible)
+3. Use Claude Code CLI to automatically merge both versions
+
+Enter your choice (1, 2, or 3):
 ```
 
 **Conflict Scenarios**:
@@ -390,7 +441,7 @@ The test suite is organized into focused test files:
 - `migration-utils.test.ts` - Migration parsing and writing
 - `template-utils.test.ts` - Template copying and migration application
 - `difference-utils.test.ts` - State difference detection
-- `conflict-utils.test.ts` - Interactive conflict resolution functionality
+- `conflict-utils.test.ts` - Interactive conflict resolution and user diff calculation functionality
 
 **Command Tests** (`src/__tests__/commands/`):
 - `generate.test.ts` - Migration generation functionality
@@ -407,7 +458,8 @@ The test suite is organized into focused test files:
 - Migration generation with all change types
 - Template initialization with and without migrations
 - Checking for and applying pending migrations
-- Interactive conflict resolution scenarios
+- Interactive conflict resolution scenarios with Claude Code CLI integration
+- User diff calculation from migration history baseline
 - Error conditions and edge cases
 - Interactive prompt mocking for non-interactive testing
 - File system operations and git integration

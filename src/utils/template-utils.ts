@@ -70,13 +70,15 @@ export async function applyMigration(templatePath: string, targetPath: string, m
             // Interactive conflict resolution
             const currentContent = await fs.readFile(targetFilePath, 'utf8');
             const diffContent = await fs.readFile(join(migrationPath, '__files', entry.diffFile), 'utf8');
-            const resolution = await resolveConflict(filePath, currentContent, diffContent, error as Error);
+            const resolution = await resolveConflict(filePath, currentContent, diffContent, error as Error, templatePath);
             await fs.writeFile(targetFilePath, resolution.content, 'utf8');
             
             if (resolution.action === 'keep') {
               console.log(`📝 Kept your version of ${filePath}`);
-            } else {
+            } else if (resolution.action === 'template') {
               console.log(`📝 Applied template version of ${filePath}`);
+            } else if (resolution.action === 'claude') {
+              console.log(`🤖 Claude Code CLI merged ${filePath}`);
             }
           }
         }
@@ -113,13 +115,15 @@ export async function applyMigration(templatePath: string, targetPath: string, m
                 // Interactive conflict resolution for moved files
                 const currentContent = await fs.readFile(newFilePath, 'utf8');
                 const diffContent = await fs.readFile(join(migrationPath, '__files', entry.diffFile), 'utf8');
-                const resolution = await resolveConflict(entry.newPath || filePath, currentContent, diffContent, error as Error);
+                const resolution = await resolveConflict(entry.newPath || filePath, currentContent, diffContent, error as Error, templatePath);
                 await fs.writeFile(newFilePath, resolution.content, 'utf8');
                 
                 if (resolution.action === 'keep') {
                   console.log(`📝 Kept your version of ${entry.newPath || filePath}`);
-                } else {
+                } else if (resolution.action === 'template') {
                   console.log(`📝 Applied template version of ${entry.newPath || filePath}`);
+                } else if (resolution.action === 'claude') {
+                  console.log(`🤖 Claude Code CLI merged ${entry.newPath || filePath}`);
                 }
               }
             }
