@@ -1,6 +1,6 @@
 {
   "name": "@timoaus/template-cli",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "A CLI tool for template-based project initialization and synchronization with intelligent migration tracking",
   "keywords": [
     "template",
