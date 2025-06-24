@@ -109,7 +109,7 @@ function validateFeatureDependencies(features: Record<string, FeatureEntry>): vo
     
     const feature = features[featureName];
     if (!feature) {
-      continue;
+      return;
     }
     if (feature.dependencies) {
       for (const dependency of feature.dependencies) {
