@@ -89,15 +89,6 @@ export async function syncWithTemplate(templatePath: string, targetPath: string 
   console.log(`✅ Best match found: "${bestMatch.migrationName}"`);
   console.log(formatSimilarityScore(bestMatch));
   
-  // Show top 3 matches for context
-  const topMatches = scores.sort((a, b) => b.score - a.score).slice(0, 3);
-  if (topMatches.length > 1) {
-    console.log("\n📈 Other potential matches:");
-    topMatches.slice(1).forEach(score => {
-      console.log(formatSimilarityScore(score));
-    });
-  }
-  
   // Calculate how many newer migrations would be available
   const bestMatchIndex = allMigrations.findIndex(m => m.name === bestMatch.migrationName);
   const newerMigrations = bestMatchIndex >= 0 ? allMigrations.slice(bestMatchIndex + 1) : allMigrations;
