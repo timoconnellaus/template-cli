@@ -19,7 +19,9 @@
       "Bash(git pull:*)",
       "Bash(git push:*)",
       "Bash(git stash:*)",
-      "Bash(gh issue create:*)"
+      "Bash(gh issue create:*)",
+      "Bash(gh issue view:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }

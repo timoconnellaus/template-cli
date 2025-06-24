@@ -8,6 +8,8 @@ export interface MigrationEntry {
   newPath?: string;  // for moved files
   diffFile?: string; // path to .diff file for modify/moved operations
   isBinary?: boolean; // indicates if this is a binary file operation
+  featureExclusive?: string; // feature that must be enabled for this entry
+  features?: Record<string, string>; // feature-specific diff files
 }
 
 export interface Migration {
@@ -23,10 +25,19 @@ export interface AppliedMigration {
   appliedAt: string;
 }
 
+export interface SkippedMigration {
+  name: string;
+  reason: string;
+  timestamp?: string;
+}
+
 export interface AppliedMigrationsFile {
   version: string;
   template: string;
   appliedMigrations: AppliedMigration[];
+  enabledFeatures?: string[];
+  skippedMigrations?: SkippedMigration[];
+  featureFiles?: Record<string, string[]>;
 }
 
 export async function parseMigrationFile(content: string): Promise<Migration> {

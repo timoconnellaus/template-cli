@@ -51,6 +51,7 @@
   "dependencies": {
     "@inquirer/prompts": "^7.5.3",
     "commander": "^12.1.0",
+    "minimatch": "^10.0.3",
     "simple-git": "^3.27.0"
   },
   "devDependencies": {
