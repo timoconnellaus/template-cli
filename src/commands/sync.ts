@@ -5,11 +5,34 @@ import confirm from "@inquirer/confirm";
 import { select } from "@inquirer/prompts";
 import type { AppliedMigrationsFile } from "../utils/migration-utils.js";
 import { getAllMigrationDirectories, reconstructStateIncrementally } from "../utils/state-utils.js";
-import { getCurrentState, loadIgnorePatterns } from "../utils/file-utils.js";
+import { getCurrentState, loadIgnorePatterns, isBinaryFile } from "../utils/file-utils.js";
 import { calculateSimilarity, findBestMatch, formatSimilarityScore, type SimilarityScore } from "../utils/similarity-utils.js";
 import { callClaudeToMergeFile } from "../utils/claude-cli.js";
 import { calculateUserDiff } from "../utils/conflict-utils.js";
 import { ensureDirectoryExists } from "../utils/file-utils.js";
+
+/**
+ * Check if content appears to be binary based on content analysis
+ */
+function isBinaryContent(content: string): boolean {
+  // Check for null bytes (common binary indicator)
+  if (content.includes('\0')) {
+    return true;
+  }
+  
+  // Check for high percentage of non-printable characters
+  let nonPrintableCount = 0;
+  for (let i = 0; i < Math.min(content.length, 8000); i++) {
+    const charCode = content.charCodeAt(i);
+    // Non-printable characters (excluding common whitespace)
+    if (charCode < 32 && charCode !== 9 && charCode !== 10 && charCode !== 13) {
+      nonPrintableCount++;
+    }
+  }
+  
+  // If more than 30% non-printable, likely binary
+  return (nonPrintableCount / Math.min(content.length, 8000)) > 0.3;
+}
 
 /**
  * Sync repository with template using historical reconstruction
@@ -197,14 +220,24 @@ async function handleMissingFiles(
     
     // Show preview of file content
     const fileContent = templateState[filePath] || '';
-    const lines = fileContent.split('\n');
-    if (lines.length > 10) {
-      console.log('Preview (first 10 lines):');
-      console.log(lines.slice(0, 10).join('\n'));
-      console.log(`... (${lines.length - 10} more lines)`);
+    
+    if (isBinaryContent(fileContent)) {
+      // Binary file - show size and type info instead of content
+      const sizeInBytes = Buffer.byteLength(fileContent, 'utf8');
+      const fileExtension = filePath.split('.').pop()?.toLowerCase() || 'unknown';
+      console.log(`📊 Binary file (${fileExtension.toUpperCase()}) - ${sizeInBytes} bytes`);
+      console.log('⚠️  Binary content cannot be previewed');
     } else {
-      console.log('Content:');
-      console.log(fileContent);
+      // Text file - show content preview
+      const lines = fileContent.split('\n');
+      if (lines.length > 10) {
+        console.log('Preview (first 10 lines):');
+        console.log(lines.slice(0, 10).join('\n'));
+        console.log(`... (${lines.length - 10} more lines)`);
+      } else {
+        console.log('Content:');
+        console.log(fileContent);
+      }
     }
 
     const choice = await select({
@@ -219,7 +252,16 @@ async function handleMissingFiles(
       try {
         const targetFilePath = join(targetPath, filePath);
         await ensureDirectoryExists(dirname(targetFilePath));
-        await writeFileSync(targetFilePath, fileContent);
+        
+        if (isBinaryContent(fileContent)) {
+          // For binary files, write as binary data
+          const buffer = Buffer.from(fileContent, 'binary');
+          writeFileSync(targetFilePath, buffer);
+        } else {
+          // For text files, write as text
+          writeFileSync(targetFilePath, fileContent);
+        }
+        
         console.log(`✅ Added ${filePath}`);
       } catch (error) {
         console.error(`❌ Failed to add ${filePath}:`, error instanceof Error ? error.message : String(error));
@@ -257,27 +299,59 @@ async function handleSimilarFiles(
     const userContent = userState[filePath] || '';
     const templateContent = templateState[filePath] || '';
     
-    // Show diff preview
-    console.log('\n📊 Differences detected:');
-    const userLines = userContent.split('\n');
-    const templateLines = templateContent.split('\n');
+    // Check if either version is binary
+    const userIsBinary = isBinaryContent(userContent);
+    const templateIsBinary = isBinaryContent(templateContent);
     
-    console.log(`Your version: ${userLines.length} lines`);
-    console.log(`Template version: ${templateLines.length} lines`);
+    if (userIsBinary || templateIsBinary) {
+      // Binary file - show size comparison instead of line count
+      console.log('\n📊 Binary file differences detected:');
+      const userSize = Buffer.byteLength(userContent, 'utf8');
+      const templateSize = Buffer.byteLength(templateContent, 'utf8');
+      const fileExtension = filePath.split('.').pop()?.toLowerCase() || 'unknown';
+      
+      console.log(`Your version: ${userSize} bytes (${fileExtension.toUpperCase()})`);
+      console.log(`Template version: ${templateSize} bytes (${fileExtension.toUpperCase()})`);
+      console.log('⚠️  Binary files cannot be merged automatically');
+    } else {
+      // Text file - show line count differences
+      console.log('\n📊 Differences detected:');
+      const userLines = userContent.split('\n');
+      const templateLines = templateContent.split('\n');
+      
+      console.log(`Your version: ${userLines.length} lines`);
+      console.log(`Template version: ${templateLines.length} lines`);
+    }
+    
+    // Create choices based on whether file is binary
+    const choices = [
+      { name: 'Replace with template version', value: 'replace' },
+      { name: 'Skip (keep my version)', value: 'skip' }
+    ];
+    
+    // Only add merge option for text files
+    if (!userIsBinary && !templateIsBinary) {
+      choices.push({ name: 'Use Claude Code to intelligently merge both versions', value: 'merge' });
+    }
     
     const choice = await select({
       message: `How would you like to handle ${filePath}?`,
-      choices: [
-        { name: 'Replace with template version', value: 'replace' },
-        { name: 'Skip (keep my version)', value: 'skip' },
-        { name: 'Use Claude Code to intelligently merge both versions', value: 'merge' }
-      ]
+      choices: choices
     });
 
     if (choice === 'replace') {
       try {
         const targetFilePath = join(targetPath, filePath);
-        await writeFileSync(targetFilePath, templateContent);
+        
+        if (templateIsBinary) {
+          // For binary files, write as binary data
+          const buffer = Buffer.from(templateContent, 'binary');
+          writeFileSync(targetFilePath, buffer);
+        } else {
+          // For text files, write as text
+          writeFileSync(targetFilePath, templateContent);
+        }
+        
         console.log(`✅ Replaced ${filePath} with template version`);
       } catch (error) {
         console.error(`❌ Failed to replace ${filePath}:`, error instanceof Error ? error.message : String(error));
