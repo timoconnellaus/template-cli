@@ -1,6 +1,6 @@
-import { spawn } from 'child_process';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { spawn } from "child_process";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 interface ClaudeCliResponse {
   type: string;
@@ -22,10 +22,10 @@ export async function callClaudeToMergeFile(
   currentContent: string,
   templateDiff: string,
   userDiff: string | null,
-  templatePath: string = '.'
+  templatePath: string = "."
 ): Promise<string> {
   const absolutePath = resolve(filePath);
-  
+
   let prompt = `You need to resolve a merge conflict during a template migration by editing a file.
 
 TASK: Edit the file at ${absolutePath} to intelligently merge template changes with user modifications.
@@ -79,13 +79,15 @@ INSTRUCTIONS:
 Please edit the file now to create an intelligent merge that respects both the user's customizations and the template's improvements.`;
 
   // Show spinner with progress feedback
-  const spinnerChars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  const spinnerChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let spinnerIndex = 0;
   let stepCount = 0;
-  
+
   const spinnerInterval = setInterval(() => {
-    const stepText = stepCount > 0 ? ` (${stepCount} steps)` : '';
-    process.stdout.write(`\r${spinnerChars[spinnerIndex]} Running Claude Code CLI...${stepText}`);
+    const stepText = stepCount > 0 ? ` (${stepCount} steps)` : "";
+    process.stdout.write(
+      `\r${spinnerChars[spinnerIndex]} Running Claude Code CLI...${stepText}`
+    );
     spinnerIndex = (spinnerIndex + 1) % spinnerChars.length;
   }, 100);
 
@@ -94,45 +96,66 @@ Please edit the file now to create an intelligent merge that respects both the u
       stepCount = newStepCount;
     });
     clearInterval(spinnerInterval);
-    process.stdout.write('\r✅ Claude Code CLI completed successfully\n');
-    
+    process.stdout.write("\r✅ Claude Code CLI completed successfully\n");
+
     if (result.is_error) {
       throw new Error(`Claude CLI error: ${result.result}`);
     }
-    
+
     // Since Claude Code edited the file directly, read the updated content
     try {
-      const updatedContent = readFileSync(absolutePath, 'utf8');
+      const updatedContent = readFileSync(absolutePath, "utf8");
       return updatedContent;
     } catch (readError) {
-      console.error('Error reading updated file:', readError instanceof Error ? readError.message : String(readError));
-      console.log('Falling back to keeping your version...');
+      console.error(
+        "Error reading updated file:",
+        readError instanceof Error ? readError.message : String(readError)
+      );
+      console.log("Falling back to keeping your version...");
       return currentContent;
     }
   } catch (error) {
     clearInterval(spinnerInterval);
-    process.stdout.write('\r❌ Claude Code CLI failed\n');
-    console.error('Error running Claude CLI:', error instanceof Error ? error.message : String(error));
-    console.log('Falling back to keeping your version...');
+    process.stdout.write("\r❌ Claude Code CLI failed\n");
+    console.error(
+      "Error running Claude CLI:",
+      error instanceof Error ? error.message : String(error)
+    );
+    console.log("Falling back to keeping your version...");
     return currentContent;
   }
 }
 
-function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void): Promise<ClaudeCliResponse> {
+function runClaudeCli(
+  prompt: string,
+  onStepUpdate?: (stepCount: number) => void
+): Promise<ClaudeCliResponse> {
   return new Promise((resolve, reject) => {
     // Use the full path to the claude binary to avoid alias/PATH issues
     const claudePath = `${process.env.HOME}/.claude/local/claude`;
-    
-    const child = spawn(claudePath, ['-p', prompt, '--output-format', 'stream-json', '--verbose'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        SHELL: '/bin/bash'
-      }
-    });
 
-    let buffer = '';
-    let stderr = '';
+    const child = spawn(
+      claudePath,
+      [
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--allowedTools",
+        "Edit",
+      ],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          SHELL: "/bin/bash",
+        },
+      }
+    );
+
+    let buffer = "";
+    let stderr = "";
     let isResolved = false;
     let resultMessage: ClaudeCliResponse | null = null;
     let stepCount = 0;
@@ -140,35 +163,40 @@ function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void
     // Add timeout to prevent hanging (5 minutes)
     const timeout = setTimeout(() => {
       if (!isResolved) {
-        child.kill('SIGTERM');
-        reject(new Error('Claude CLI timed out after 5 minutes'));
+        child.kill("SIGTERM");
+        reject(new Error("Claude CLI timed out after 5 minutes"));
       }
     }, 300000);
 
-    child.stdout.on('data', (data) => {
+    child.stdout.on("data", (data) => {
       const rawData = data.toString();
       buffer += rawData;
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
         if (line.trim()) {
           try {
             const parsed = JSON.parse(line);
-            
+
             // Count steps for progress feedback
-            if (parsed.type === 'tool_use' || parsed.type === 'tool_result' || parsed.type === 'thinking' || parsed.type === 'content') {
+            if (
+              parsed.type === "tool_use" ||
+              parsed.type === "tool_result" ||
+              parsed.type === "thinking" ||
+              parsed.type === "content"
+            ) {
               stepCount++;
               onStepUpdate?.(stepCount);
             }
-            
+
             // Look for the final result message
-            if (parsed.type === 'result') {
-              console.log('\n🏆 CLAUDE FINAL RESULT:');
-              console.log('-'.repeat(80));
-              console.log(parsed.result || 'No result content');
-              console.log('-'.repeat(80));
-              
+            if (parsed.type === "result") {
+              console.log("\n🏆 CLAUDE FINAL RESULT:");
+              console.log("-".repeat(80));
+              console.log(parsed.result || "No result content");
+              console.log("-".repeat(80));
+
               resultMessage = parsed as ClaudeCliResponse;
               // Don't resolve yet - wait for process to close
             }
@@ -180,11 +208,11 @@ function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void
       }
     });
 
-    child.stderr.on('data', (data) => {
+    child.stderr.on("data", (data) => {
       stderr += data.toString();
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
       if (isResolved) return;
       isResolved = true;
       clearTimeout(timeout);
@@ -197,11 +225,11 @@ function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void
       if (resultMessage) {
         resolve(resultMessage);
       } else {
-        reject(new Error('No result message received from Claude CLI'));
+        reject(new Error("No result message received from Claude CLI"));
       }
     });
 
-    child.on('error', (error) => {
+    child.on("error", (error) => {
       if (isResolved) return;
       isResolved = true;
       clearTimeout(timeout);
