@@ -394,6 +394,7 @@ When users choose Option 3, the system leverages Claude Code CLI for intelligent
    - Clear instructions to preserve user intent while incorporating template improvements
 4. **AI-Powered Resolution**: Claude makes intelligent decisions about how to merge conflicting changes, often finding creative solutions that preserve both user customizations and template updates
 5. **Progress Feedback**: During Claude Code CLI execution, a spinner with step count is displayed to show progress: `⠹ Running Claude Code CLI... (5 steps)`
+6. **Streaming Response Parsing**: Uses newline-delimited JSON parsing based on `--output-format stream-json` to properly count assistant and user messages, tool uses, and tool results for accurate progress tracking
 
 **Example Conflict Prompt**:
 ```

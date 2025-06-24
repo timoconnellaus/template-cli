@@ -184,16 +184,13 @@ function runClaudeCli(
               console.log(`DEBUG CLAUDE STREAM: ${JSON.stringify(parsed)}`);
             }
 
-            // Count steps for progress feedback
-            // Look for any message that indicates meaningful progress
+            // Count steps for progress feedback based on claude-code-discord implementation
+            // Track meaningful messages that indicate progress
             if (
-              parsed.type === "tool_use" ||
-              parsed.type === "tool_result" ||
-              parsed.type === "thinking" ||
-              parsed.type === "content" ||
-              parsed.type === "message" ||
-              parsed.type === "tool_call" ||
-              (parsed.type === "stream" && parsed.delta)
+              parsed.type === "assistant" ||
+              parsed.type === "user" ||
+              (parsed.type === "assistant" && parsed.message?.content?.some((c: any) => c.type === "tool_use")) ||
+              (parsed.type === "user" && parsed.message?.content?.some((c: any) => c.type === "tool_result"))
             ) {
               stepCount++;
               onStepUpdate?.(stepCount);
