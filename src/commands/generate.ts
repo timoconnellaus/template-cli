@@ -25,7 +25,8 @@ export async function generateMigration(projectPath: string, name?: string): Pro
     reconstructedState.textFiles,
     reconstructedState.binaryFiles,
     actualState.textFiles,
-    actualState.binaryFiles
+    actualState.binaryFiles,
+    projectPath
   );
   
   // Check if there are any changes

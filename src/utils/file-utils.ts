@@ -5,6 +5,14 @@ export async function isBinaryFile(filePath: string): Promise<boolean> {
   try {
     const buffer = await fs.readFile(filePath);
     
+    // Special case: empty files with .bin extension should be treated as binary
+    if (buffer.length === 0) {
+      // For empty files, use file extension heuristic
+      const lowerPath = filePath.toLowerCase();
+      const binaryExtensions = ['.bin', '.exe', '.dll', '.so', '.dylib', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip', '.tar', '.gz'];
+      return binaryExtensions.some(ext => lowerPath.endsWith(ext));
+    }
+    
     // Check for null bytes in first 8000 bytes (common binary indicator)
     const sampleSize = Math.min(buffer.length, 8000);
     for (let i = 0; i < sampleSize; i++) {
@@ -254,5 +262,23 @@ export async function ensureDirectoryExists(dirPath: string): Promise<void> {
     await fs.mkdir(dirPath, { recursive: true });
   } catch (error) {
     // Directory might already exist, that's ok
+  }
+}
+
+export async function areBinaryFilesEqual(filePath1: string, filePath2: string): Promise<boolean> {
+  try {
+    const buffer1 = await fs.readFile(filePath1);
+    const buffer2 = await fs.readFile(filePath2);
+    
+    // Quick check: if sizes are different, files are different
+    if (buffer1.length !== buffer2.length) {
+      return false;
+    }
+    
+    // Compare byte by byte
+    return buffer1.equals(buffer2);
+  } catch (error) {
+    // If we can't read either file, assume they're different
+    return false;
   }
 }

@@ -1,11 +1,40 @@
 import { select, confirm } from '@inquirer/prompts';
 import { generateUnifiedDiff } from './diff-utils.js';
 import { type Migration } from './migration-utils.js';
-import { type FileState } from './file-utils.js';
+import { type FileState, areBinaryFilesEqual } from './file-utils.js';
+import { join } from 'path';
+import { promises as fs } from 'fs';
 
 export interface DifferenceResult {
   migration: Migration;
   diffContents: Record<string, string>; // diffFile -> diff content
+}
+
+async function getLatestBinaryFileFromMigrations(projectPath: string, filePath: string): Promise<string | null> {
+  try {
+    const migrationsPath = join(projectPath, 'migrations');
+    const entries = await fs.readdir(migrationsPath);
+    const migrationFolders = entries
+      .filter(entry => entry.includes('_'))
+      .sort()
+      .reverse(); // Most recent first
+    
+    // Find the most recent migration that contains this binary file
+    for (const folder of migrationFolders) {
+      const binaryFilePath = join(migrationsPath, folder, '__files', `${filePath}.binary`);
+      try {
+        await fs.access(binaryFilePath);
+        return binaryFilePath;
+      } catch {
+        // File doesn't exist in this migration, try the next one
+        continue;
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function calculateDifferences(oldState: Record<string, string>, newState: Record<string, string>): Promise<DifferenceResult> {
@@ -122,7 +151,8 @@ export async function calculateDifferencesWithBinary(
   oldTextFiles: Record<string, string>,
   oldBinaryFiles: Set<string>,
   newTextFiles: Record<string, string>,
-  newBinaryFiles: Set<string>
+  newBinaryFiles: Set<string>,
+  projectPath: string
 ): Promise<DifferenceResult> {
   const migration: Migration = {};
   const diffContents: Record<string, string> = {};
@@ -162,17 +192,10 @@ export async function calculateDifferencesWithBinary(
     }
   }
   
-  // Find modified binary files (changed from binary to binary)
-  for (const filePath of newBinaryFiles) {
-    if (oldBinaryFiles.has(filePath)) {
-      // Binary file exists in both states - always treat as modified since we can't diff
-      migration[filePath] = {
-        type: 'binary',
-        path: filePath,
-        isBinary: true
-      };
-    }
-  }
+  // Handle binary file modifications
+  // TODO: Add proper binary file change detection here
+  // For now, we'll only detect binary modifications when there are actual content changes
+  // This avoids false positives but might miss some binary changes
   
   // Find files that changed from text to binary or binary to text
   for (const filePath of newBinaryFiles) {
@@ -300,6 +323,39 @@ export async function calculateDifferencesWithBinary(
       type: 'delete',
       path: deletedPath
     };
+  }
+  
+  // Finally, handle binary file modifications for files that exist in both states
+  // but weren't already processed as conversions, new files, or deletions
+  for (const filePath of newBinaryFiles) {
+    if (oldBinaryFiles.has(filePath) && !migration[filePath]) {
+      // Binary file exists in both states and hasn't been processed yet
+      // Check if the binary content has actually changed
+      const oldBinaryPath = await getLatestBinaryFileFromMigrations(projectPath, filePath);
+      const newBinaryPath = join(projectPath, filePath);
+      
+      if (oldBinaryPath) {
+        // Compare the binary files
+        const filesEqual = await areBinaryFilesEqual(oldBinaryPath, newBinaryPath);
+        
+        if (!filesEqual) {
+          // Binary file has changed, mark it as modified
+          migration[filePath] = {
+            type: 'binary',
+            path: filePath,
+            isBinary: true
+          };
+        }
+        // If files are equal, don't add to migration (no change detected)
+      } else {
+        // No previous binary file found, treat as new (this shouldn't happen in normal flow)
+        migration[filePath] = {
+          type: 'binary',
+          path: filePath,
+          isBinary: true
+        };
+      }
+    }
   }
   
   return { migration, diffContents };
