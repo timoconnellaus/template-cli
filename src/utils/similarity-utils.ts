@@ -172,19 +172,19 @@ export function formatSimilarityScore(score: SimilarityScore): string {
   const result = [
     `📊 ${score.migrationName} (${percentage}% similarity, score: ${score.score})`,
     `   - ${score.exactMatches.length} exact file matches`,
-    `   - ${score.partialMatches.length} files with minor differences`,
+    `   - ${score.extraFiles.length} files only in your repo`,
   ];
 
-  if (score.missingFiles.length > 0) {
-    result.push(`   - ${score.missingFiles.length} files missing from your repo:`);
-    score.missingFiles.forEach(file => {
+  if (score.partialMatches.length > 0) {
+    result.push(`   - ${score.partialMatches.length} files with differences:`);
+    score.partialMatches.forEach(file => {
       result.push(`     • ${file}`);
     });
   }
 
-  if (score.extraFiles.length > 0) {
-    result.push(`   - ${score.extraFiles.length} files only in your repo:`);
-    score.extraFiles.forEach(file => {
+  if (score.missingFiles.length > 0) {
+    result.push(`   - ${score.missingFiles.length} files missing from your repo:`);
+    score.missingFiles.forEach(file => {
       result.push(`     • ${file}`);
     });
   }
