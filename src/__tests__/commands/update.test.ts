@@ -4,12 +4,10 @@ import { writeFile, mkdir, readFile } from 'fs/promises';
 import { updateFromTemplate } from '../../commands/update.js';
 import { generateMigration } from '../../commands/generate.js';
 import { createTestRepo } from '../test-helpers.js';
-import * as readline from 'readline';
-import { spawn } from 'child_process';
 
-// Mock readline for conflict resolution
-vi.mock('readline', () => ({
-  createInterface: vi.fn(),
+// Mock @inquirer/prompts for conflict resolution
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(),
 }));
 
 // Mock child_process for Claude CLI calls
@@ -21,21 +19,17 @@ describe('update command', () => {
   let templateRepo: { path: string; cleanup: () => Promise<void> };
   let projectRepo: { path: string; cleanup: () => Promise<void> };
   let consoleSpy: ReturnType<typeof vi.spyOn>;
-  let mockRl: any;
-  let mockQuestion: any;
+  let mockSelect: any;
 
   beforeEach(async () => {
     templateRepo = await createTestRepo();
     projectRepo = await createTestRepo();
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     
-    // Setup readline mock
-    mockQuestion = vi.fn();
-    mockRl = {
-      question: mockQuestion,
-      close: vi.fn(),
-    };
-    vi.mocked(readline.createInterface).mockReturnValue(mockRl);
+    // Setup select prompt mock
+    mockSelect = vi.fn();
+    const inquirer = await import('@inquirer/prompts');
+    vi.mocked(inquirer.select).mockImplementation(mockSelect);
   });
 
   afterEach(async () => {
@@ -339,9 +333,7 @@ describe('update command', () => {
     await writeFile(join(projectRepo.path, 'config.txt'), 'line 1\nuser completely rewrote line 2 differently\nline 3\nextra user content that breaks context');
 
     // 5. Mock user choosing to keep their version
-    mockQuestion.mockImplementation((_question: string, callback: (answer: string) => void) => {
-      callback('1'); // Keep my version
-    });
+    mockSelect.mockResolvedValue('keep');
 
     // 6. Run update
     await updateFromTemplate(projectRepo.path);
@@ -351,7 +343,7 @@ describe('update command', () => {
     expect(finalContent).toBe('line 1\nuser completely rewrote line 2 differently\nline 3\nextra user content that breaks context');
     
     // Verify conflict resolution was triggered
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('📝 Kept your version of config.txt')
     );
@@ -400,9 +392,7 @@ describe('update command', () => {
     await writeFile(join(projectRepo.path, 'package.json'), '{\n  "name": "test",\n  "version": "1.5.0",\n  "author": "User Added",\n  "userField": "breaks context"\n}');
 
     // 5. Mock user choosing template version
-    mockQuestion.mockImplementation((_question: string, callback: (answer: string) => void) => {
-      callback('2'); // Use template version
-    });
+    mockSelect.mockResolvedValue('template');
 
     // 6. Run update
     await updateFromTemplate(projectRepo.path);
@@ -413,7 +403,7 @@ describe('update command', () => {
     expect(finalContent).toContain('"description": "Updated"');
     
     // Verify conflict resolution was triggered
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('📝 Applied template version of package.json')
     );
@@ -459,9 +449,7 @@ describe('update command', () => {
     await writeFile(join(projectRepo.path, 'config.txt'), 'line1\nuser_completely_changed_line2\nextra_user_content');
 
     // 5. Mock user choice to keep their version for the conflict
-    mockQuestion.mockImplementation((_question: string, callback: (answer: string) => void) => {
-      callback('1'); // Keep my version
-    });
+    mockSelect.mockResolvedValue('keep');
 
     // 6. Run update
     await updateFromTemplate(projectRepo.path);
@@ -476,7 +464,7 @@ describe('update command', () => {
     expect(appContent).toBe('console.log("new file");');
     
     // Verify conflict resolution was triggered once
-    expect(mockRl.close).toHaveBeenCalledTimes(1);
+    expect(mockSelect).toHaveBeenCalledTimes(1);
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('📝 Kept your version of config.txt')
     );
@@ -525,9 +513,7 @@ describe('update command', () => {
     await writeFile(join(projectRepo.path, 'file1.txt'), 'user completely restructured content with extra lines\nand more changes that break diff context');
 
     // 4. Mock user choosing to keep their version for the conflict
-    mockQuestion.mockImplementation((_question: string, callback: (answer: string) => void) => {
-      callback('1'); // Keep my version
-    });
+    mockSelect.mockResolvedValue('keep');
 
     // 5. Run update
     await updateFromTemplate(projectRepo.path);

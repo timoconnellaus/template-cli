@@ -319,7 +319,33 @@ This historical reconstruction approach:
 - Minimizes manual intervention and guesswork
 - Respects both `.gitignore` and `.migrateignore` patterns to prevent unwanted files in migrations
 
-## Recent Fixes
+## Recent Updates
+
+### v1.4.1 - Refactored Claude CLI Integration (Current)
+**Issue:** The conflict resolution system was tightly coupled, with Claude CLI calling logic mixed with user prompts, making it difficult to maintain and test.
+
+**Refactoring:**
+- **Isolated Claude CLI Function**: Created `src/utils/claude-cli.ts` with dedicated `callClaudeToMergeFile()` function
+- **Direct Prompts**: Moved conflict resolution prompts directly into sync and update commands instead of shared utility
+- **Cleaner Architecture**: Each command now controls its own user interaction flow
+- **Improved Testing**: Fixed hanging tests by properly mocking `@inquirer/prompts.select` instead of readline
+
+**Benefits:**
+- Better separation of concerns between Claude CLI calling and user prompts
+- More maintainable code with explicit conflict resolution flows
+- Easier testing with isolated functions
+- All 148 tests now pass consistently
+
+### v1.4.0 - Simplified Sync Display
+**Issue:** Sync command was showing excessive information about all migration comparison results, making the output cluttered and hard to read.
+
+**Improvements:**
+- **Focused Display**: Now shows only the best match migration details instead of all comparisons
+- **Essential Information**: Displays only the most relevant file lists (missing, partial matches, extra files)
+- **Cleaner UI**: Removed verbose similarity scoring details from main output
+- **Better UX**: Users can quickly understand the sync results without information overload
+
+**Result:** Much cleaner and more actionable sync command output that focuses on what users need to know.
 
 ### v1.2.1 - Fixed File Classification Bug
 **Issue:** Files that existed in both repositories but had different content were incorrectly classified as "missing" instead of "partial matches" when similarity was below 80%.

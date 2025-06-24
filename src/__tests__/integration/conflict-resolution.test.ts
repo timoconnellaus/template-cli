@@ -3,30 +3,25 @@ import { join } from 'path';
 import { writeFile, mkdir, readFile, unlink } from 'fs/promises';
 import { applyMigration } from '../../utils/template-utils.js';
 import { createTestRepo } from '../test-helpers.js';
-import * as readline from 'readline';
 
-// Mock readline for conflict resolution
-vi.mock('readline', () => ({
-  createInterface: vi.fn(),
+// Mock @inquirer/prompts for conflict resolution
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(),
 }));
 
 describe('Conflict Resolution Integration', () => {
   let templateRepo: { path: string; cleanup: () => Promise<void> };
   let targetRepo: { path: string; cleanup: () => Promise<void> };
-  let mockRl: any;
-  let mockQuestion: any;
+  let mockSelect: any;
 
   beforeEach(async () => {
     templateRepo = await createTestRepo();
     targetRepo = await createTestRepo();
     
-    // Setup readline mock
-    mockQuestion = vi.fn();
-    mockRl = {
-      question: mockQuestion,
-      close: vi.fn(),
-    };
-    vi.mocked(readline.createInterface).mockReturnValue(mockRl);
+    // Setup select prompt mock
+    mockSelect = vi.fn();
+    const inquirer = await import('@inquirer/prompts');
+    vi.mocked(inquirer.select).mockImplementation(mockSelect);
   });
 
   afterEach(async () => {
@@ -80,16 +75,14 @@ export const migration = {
     await writeFile(join(migrationDir, 'migrate.ts'), migrationContent);
 
     // 4. Test "keep my version" choice
-    mockQuestion.mockImplementation((question: string, callback: (answer: string) => void) => {
-      callback('1'); // Choose to keep user's version
-    });
+    mockSelect.mockResolvedValue('keep');
 
     await applyMigration(templateRepo.path, targetRepo.path, 'test-conflict-migration');
 
     // Verify user's content is preserved
     const resultContent = await readFile(join(targetRepo.path, 'config.txt'), 'utf8');
     expect(resultContent).toBe(userModifiedContent);
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
   });
 
   it('should apply template version when user chooses template in conflict', async () => {
@@ -135,9 +128,7 @@ export const migration = {
     await writeFile(join(migrationDir, 'migrate.ts'), migrationContent);
 
     // 4. Test "use template" choice
-    mockQuestion.mockImplementation((question: string, callback: (answer: string) => void) => {
-      callback('2'); // Choose to use template version
-    });
+    mockSelect.mockResolvedValue('template');
 
     await applyMigration(templateRepo.path, targetRepo.path, 'test-conflict-migration');
 
@@ -147,7 +138,7 @@ export const migration = {
 template modified line 2
 line 3`;
     expect(resultContent).toBe(expectedContent);
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
   });
 
   it('should handle complex conflict with multiple changes', async () => {
@@ -206,16 +197,14 @@ export const migration = {
     await writeFile(join(migrationDir, 'migrate.ts'), migrationContent);
 
     // 4. Test keeping user version in complex conflict
-    mockQuestion.mockImplementation((question: string, callback: (answer: string) => void) => {
-      callback('1'); // Keep user's version
-    });
+    mockSelect.mockResolvedValue('keep');
 
     await applyMigration(templateRepo.path, targetRepo.path, 'complex-conflict-migration');
 
     // Verify user's complex changes are preserved
     const resultContent = await readFile(join(targetRepo.path, 'app.config'), 'utf8');
     expect(resultContent).toBe(userModifiedContent);
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
   });
 
   it('should handle conflict in file modification with existing changes', async () => {
@@ -268,9 +257,7 @@ export const migration = {
     await writeFile(join(migrationDir, 'migrate.ts'), migrationContent);
 
     // 4. Test template choice for conflict
-    mockQuestion.mockImplementation((question: string, callback: (answer: string) => void) => {
-      callback('2'); // Use template version
-    });
+    mockSelect.mockResolvedValue('template');
 
     await applyMigration(templateRepo.path, targetRepo.path, 'modify-conflict-migration');
 
@@ -278,6 +265,6 @@ export const migration = {
     const resultContent = await readFile(join(targetRepo.path, 'utils.js'), 'utf8');
     expect(resultContent).toContain('return 42 * 2');
     expect(resultContent).toContain('Template added comment');
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(mockSelect).toHaveBeenCalled();
   });
 });

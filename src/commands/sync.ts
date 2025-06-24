@@ -7,7 +7,8 @@ import type { AppliedMigrationsFile } from "../utils/migration-utils.js";
 import { getAllMigrationDirectories, reconstructStateIncrementally } from "../utils/state-utils.js";
 import { getCurrentState, loadIgnorePatterns } from "../utils/file-utils.js";
 import { calculateSimilarity, findBestMatch, formatSimilarityScore, type SimilarityScore } from "../utils/similarity-utils.js";
-import { resolveConflict } from "../utils/conflict-utils.js";
+import { callClaudeToMergeFile } from "../utils/claude-cli.js";
+import { calculateUserDiff } from "../utils/conflict-utils.js";
 import { ensureDirectoryExists } from "../utils/file-utils.js";
 
 /**
@@ -285,20 +286,19 @@ async function handleSimilarFiles(
       console.log(`⏭️  Kept your version of ${filePath}`);
     } else if (choice === 'merge') {
       try {
-        // Create a mock diff to use with the conflict resolution
+        // Create a mock diff to represent template changes
         const mockDiff = `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,${userLines.length} +1,${templateLines.length} @@\n${templateLines.map(line => `+${line}`).join('\n')}`;
-        const mockError = new Error('Simulated conflict for merge');
         
-        const resolution = await resolveConflict(filePath, userContent, mockDiff, mockError, templatePath);
+        // Calculate user diff from baseline
+        const userDiff = await calculateUserDiff(filePath, userContent, templatePath);
+        
+        // Use Claude CLI to merge both versions
+        const mergedContent = await callClaudeToMergeFile(filePath, userContent, mockDiff, userDiff, templatePath);
         
         const targetFilePath = join(targetPath, filePath);
-        await writeFileSync(targetFilePath, resolution.content);
+        await writeFileSync(targetFilePath, mergedContent);
         
-        if (resolution.action === 'claude') {
-          console.log(`🤖 Claude Code merged ${filePath}`);
-        } else {
-          console.log(`✅ Applied resolution for ${filePath}`);
-        }
+        console.log(`🤖 Claude Code merged ${filePath}`);
       } catch (error) {
         console.error(`❌ Failed to merge ${filePath}:`, error instanceof Error ? error.message : String(error));
         console.log(`⏭️  Keeping your version of ${filePath}`);
