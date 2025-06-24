@@ -5,14 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common Commands
 
 ### For Template Users:
+
 - **Initialize**: `bun run dev init <target>` - Initialize a new project from template
 - **Check Updates**: `bun run dev check` - Check for pending migrations from template
 - **Apply Updates**: `bun run dev update` - Apply pending migrations from template
 
 ### For Template Developers:
+
 - **Generate Migration**: `bun run dev dev generate [name]` - Generate migration from current state vs last migration
 
 ### Development:
+
 - **Build**: `bun run build` - Build to dist/ folder for production
 - **Test**: `bun run test` - Run Vitest test suite (NOT `bun test` which runs Bun's built-in runner)
 - **Test Watch**: `bun run test:watch` - Run tests in watch mode
@@ -61,4 +64,5 @@ When applying migrations, if a diff cannot be applied (due to local changes conf
 
 ## Documentation References
 
-- The `SPEC.md` file contains details about how the CLI works in depth
+- The @SPEC.md file contains details about how the CLI works in depth and should be consulted first before making changes
+- Before committing any code - the SPEC.md file must be updated to ensure it's consistent with the functionality of the CLI

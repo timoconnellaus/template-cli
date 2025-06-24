@@ -15,7 +15,10 @@
       "Bash(rg:*)",
       "Bash(node:*)",
       "Bash(npm pack:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)"
     ],
     "deny": []
   }
