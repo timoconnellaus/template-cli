@@ -80,3 +80,5 @@ All issues must meet these criteria for completion:
 - Consider both template users and template developers as audiences
 - Think about edge cases and error scenarios
 - Consider the impact on the migration generation and application workflows
+
+As a final step - use the gh cli to add this as an issue to github
