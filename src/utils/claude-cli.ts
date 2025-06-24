@@ -156,8 +156,20 @@ function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void
           try {
             const parsed = JSON.parse(line);
             
+            // Debug: Log all message types to understand the stream format
+            if (process.env.DEBUG_CLAUDE_CLI) {
+              console.log(`DEBUG CLAUDE STREAM: ${JSON.stringify(parsed)}`);
+            }
+            
             // Count steps for progress feedback
-            if (parsed.type === 'tool_use' || parsed.type === 'tool_result' || parsed.type === 'thinking' || parsed.type === 'content') {
+            // Look for any message that indicates meaningful progress
+            if (parsed.type === 'tool_use' || 
+                parsed.type === 'tool_result' || 
+                parsed.type === 'thinking' || 
+                parsed.type === 'content' ||
+                parsed.type === 'message' ||
+                parsed.type === 'tool_call' ||
+                (parsed.type === 'stream' && parsed.delta)) {
               stepCount++;
               onStepUpdate?.(stepCount);
             }
