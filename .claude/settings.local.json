@@ -18,7 +18,8 @@
       "Bash(grep:*)",
       "Bash(git pull:*)",
       "Bash(git push:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(gh issue create:*)"
     ],
     "deny": []
   }
