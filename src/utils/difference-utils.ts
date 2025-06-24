@@ -1,6 +1,7 @@
 import { select, confirm } from '@inquirer/prompts';
 import { generateUnifiedDiff } from './diff-utils.js';
 import { type Migration } from './migration-utils.js';
+import { type FileState } from './file-utils.js';
 
 export interface DifferenceResult {
   migration: Migration;
@@ -100,6 +101,193 @@ export async function calculateDifferences(oldState: Record<string, string>, new
           const targetIndex = newFiles.indexOf(moveTarget);
           if (targetIndex > -1) {
             newFiles.splice(targetIndex, 1);
+          }
+          
+          continue; // Skip adding as delete
+        }
+      }
+    }
+    
+    // Not a move, so it's a delete
+    migration[deletedPath] = {
+      type: 'delete',
+      path: deletedPath
+    };
+  }
+  
+  return { migration, diffContents };
+}
+
+export async function calculateDifferencesWithBinary(
+  oldTextFiles: Record<string, string>,
+  oldBinaryFiles: Set<string>,
+  newTextFiles: Record<string, string>,
+  newBinaryFiles: Set<string>
+): Promise<DifferenceResult> {
+  const migration: Migration = {};
+  const diffContents: Record<string, string> = {};
+  
+  // Find new and modified text files
+  for (const [filePath, newContent] of Object.entries(newTextFiles)) {
+    const oldContent = oldTextFiles[filePath];
+    
+    if (oldContent === undefined) {
+      // New text file
+      migration[filePath] = {
+        type: 'new',
+        path: filePath
+      };
+    } else if (oldContent !== newContent) {
+      // Modified text file - generate unified diff
+      const diffContent = generateUnifiedDiff(oldContent, newContent, filePath, filePath);
+      if (diffContent.includes('@@')) { // Only if there are actual changes
+        const diffFileName = `${filePath}.diff`;
+        migration[filePath] = {
+          type: 'modify',
+          diffFile: diffFileName
+        };
+        diffContents[diffFileName] = diffContent;
+      }
+    }
+  }
+  
+  // Find new binary files
+  for (const filePath of newBinaryFiles) {
+    if (!oldBinaryFiles.has(filePath)) {
+      migration[filePath] = {
+        type: 'binary',
+        path: filePath,
+        isBinary: true
+      };
+    }
+  }
+  
+  // Find modified binary files (changed from binary to binary)
+  for (const filePath of newBinaryFiles) {
+    if (oldBinaryFiles.has(filePath)) {
+      // Binary file exists in both states - always treat as modified since we can't diff
+      migration[filePath] = {
+        type: 'binary',
+        path: filePath,
+        isBinary: true
+      };
+    }
+  }
+  
+  // Find files that changed from text to binary or binary to text
+  for (const filePath of newBinaryFiles) {
+    if (oldTextFiles[filePath] !== undefined) {
+      // File changed from text to binary
+      migration[filePath] = {
+        type: 'binary',
+        path: filePath,
+        isBinary: true
+      };
+    }
+  }
+  
+  for (const [filePath] of Object.entries(newTextFiles)) {
+    if (oldBinaryFiles.has(filePath)) {
+      // File changed from binary to text - treat as new text file
+      migration[filePath] = {
+        type: 'new',
+        path: filePath
+      };
+    }
+  }
+  
+  // Find deleted files (both text and binary)
+  const deletedTextFiles = Object.keys(oldTextFiles).filter(filePath => 
+    !(filePath in newTextFiles) && !newBinaryFiles.has(filePath)
+  );
+  const deletedBinaryFiles = Array.from(oldBinaryFiles).filter(filePath => 
+    !newBinaryFiles.has(filePath) && !(filePath in newTextFiles)
+  );
+  
+  const allDeletedFiles = [...deletedTextFiles, ...deletedBinaryFiles];
+  const allNewFiles = [
+    ...Object.keys(newTextFiles).filter(filePath => !(filePath in oldTextFiles) && !oldBinaryFiles.has(filePath)),
+    ...Array.from(newBinaryFiles).filter(filePath => !oldBinaryFiles.has(filePath) && !(filePath in oldTextFiles))
+  ];
+  
+  // Handle move detection for deleted files
+  for (const deletedPath of allDeletedFiles) {
+    if (allNewFiles.length > 0) {
+      const isMove = await confirm({
+        message: `File '${deletedPath}' was deleted. Was it moved/renamed?`,
+        default: false
+      });
+      
+      if (isMove) {
+        const moveTarget = await select({
+          message: `Which file was '${deletedPath}' moved to?`,
+          choices: [
+            ...allNewFiles.map(path => ({ name: path, value: path })),
+            { name: '(None - it was actually deleted)', value: null }
+          ]
+        });
+        
+        if (moveTarget) {
+          const wasOldBinary = oldBinaryFiles.has(deletedPath);
+          const isNewBinary = newBinaryFiles.has(moveTarget);
+          
+          // Remove the "new" or "binary" entry for the target file since it's actually a move
+          delete migration[moveTarget];
+          
+          if (wasOldBinary && isNewBinary) {
+            // Binary to binary move
+            migration[moveTarget] = {
+              type: 'moved',
+              oldPath: deletedPath,
+              newPath: moveTarget,
+              isBinary: true
+            };
+          } else if (!wasOldBinary && !isNewBinary) {
+            // Text to text move - check for content changes
+            const oldContent = oldTextFiles[deletedPath] || '';
+            const newContent = newTextFiles[moveTarget] || '';
+            
+            if (oldContent === newContent) {
+              // Simple move without changes
+              migration[moveTarget] = {
+                type: 'moved',
+                oldPath: deletedPath,
+                newPath: moveTarget
+              };
+            } else {
+              // Move with changes
+              const diffContent = generateUnifiedDiff(oldContent, newContent, deletedPath, moveTarget);
+              if (diffContent.includes('@@')) {
+                const diffFileName = `${moveTarget}.diff`;
+                migration[moveTarget] = {
+                  type: 'moved',
+                  oldPath: deletedPath,
+                  newPath: moveTarget,
+                  diffFile: diffFileName
+                };
+                diffContents[diffFileName] = diffContent;
+              } else {
+                migration[moveTarget] = {
+                  type: 'moved',
+                  oldPath: deletedPath,
+                  newPath: moveTarget
+                };
+              }
+            }
+          } else {
+            // Binary/text conversion with move - treat as delete old + new target
+            migration[deletedPath] = { type: 'delete', path: deletedPath };
+            if (isNewBinary) {
+              migration[moveTarget] = { type: 'binary', path: moveTarget, isBinary: true };
+            } else {
+              migration[moveTarget] = { type: 'new', path: moveTarget };
+            }
+          }
+          
+          // Remove from new files list
+          const targetIndex = allNewFiles.indexOf(moveTarget);
+          if (targetIndex > -1) {
+            allNewFiles.splice(targetIndex, 1);
           }
           
           continue; // Skip adding as delete

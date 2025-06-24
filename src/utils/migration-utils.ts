@@ -2,11 +2,12 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 
 export interface MigrationEntry {
-  type: 'new' | 'delete' | 'modify' | 'moved';
+  type: 'new' | 'delete' | 'modify' | 'moved' | 'binary';
   path?: string;
   oldPath?: string;  // for moved files
   newPath?: string;  // for moved files
   diffFile?: string; // path to .diff file for modify/moved operations
+  isBinary?: boolean; // indicates if this is a binary file operation
 }
 
 export interface Migration {

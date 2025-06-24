@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { matchesGitignorePattern, shouldIgnoreFile } from '../../utils/file-utils.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { matchesGitignorePattern, shouldIgnoreFile, isBinaryFile, getCurrentStateWithBinary } from '../../utils/file-utils.js';
+import { promises as fs } from 'fs';
+import { join } from 'path';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 
 describe('file-utils', () => {
   describe('matchesGitignorePattern', () => {
@@ -60,6 +64,83 @@ describe('file-utils', () => {
       const patterns = ['*.log', '!important.log'];
       expect(shouldIgnoreFile('app.log', patterns)).toBe(true);
       expect(shouldIgnoreFile('important.log', patterns)).toBe(false);
+    });
+  });
+
+  describe('isBinaryFile', () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await mkdtemp(join(tmpdir(), 'binary-test-'));
+    });
+
+    afterEach(async () => {
+      await rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it('should detect text files as non-binary', async () => {
+      const textFile = join(tmpDir, 'text.txt');
+      await fs.writeFile(textFile, 'Hello world\nThis is a text file\n', 'utf8');
+      expect(await isBinaryFile(textFile)).toBe(false);
+    });
+
+    it('should detect null bytes as binary', async () => {
+      const binaryFile = join(tmpDir, 'binary.bin');
+      const buffer = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x57, 0x6f, 0x72, 0x6c, 0x64]); // "Hello\0World"
+      await fs.writeFile(binaryFile, buffer);
+      expect(await isBinaryFile(binaryFile)).toBe(true);
+    });
+
+    it('should detect high non-printable character percentage as binary', async () => {
+      const binaryFile = join(tmpDir, 'binary2.bin');
+      const buffer = Buffer.from(Array.from({ length: 100 }, (_, i) => i % 256)); // Lots of non-printable chars
+      await fs.writeFile(binaryFile, buffer);
+      expect(await isBinaryFile(binaryFile)).toBe(true);
+    });
+
+    it('should handle non-existent files gracefully', async () => {
+      const nonExistentFile = join(tmpDir, 'does-not-exist.txt');
+      expect(await isBinaryFile(nonExistentFile)).toBe(true); // Should assume binary for safety
+    });
+  });
+
+  describe('getCurrentStateWithBinary', () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await mkdtemp(join(tmpdir(), 'state-test-'));
+    });
+
+    afterEach(async () => {
+      await rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it('should separate text and binary files correctly', async () => {
+      // Create test files
+      const textFile = join(tmpDir, 'text.txt');
+      const binaryFile = join(tmpDir, 'binary.bin');
+      
+      await fs.writeFile(textFile, 'Hello world', 'utf8');
+      const binaryBuffer = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00]); // "Hello\0"
+      await fs.writeFile(binaryFile, binaryBuffer);
+
+      const state = await getCurrentStateWithBinary(tmpDir, []);
+
+      expect(state.textFiles['text.txt']).toBe('Hello world');
+      expect(state.binaryFiles.has('binary.bin')).toBe(true);
+      expect(state.binaryFiles.has('text.txt')).toBe(false);
+      expect(state.textFiles['binary.bin']).toBeUndefined();
+    });
+
+    it('should respect ignore patterns', async () => {
+      // Create test files
+      await fs.writeFile(join(tmpDir, 'important.txt'), 'Important file', 'utf8');
+      await fs.writeFile(join(tmpDir, 'log.txt'), 'Log file', 'utf8');
+
+      const state = await getCurrentStateWithBinary(tmpDir, ['*.log', 'log.txt']);
+
+      expect(state.textFiles['important.txt']).toBe('Important file');
+      expect(state.textFiles['log.txt']).toBeUndefined();
     });
   });
 });

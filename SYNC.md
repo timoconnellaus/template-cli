@@ -319,9 +319,81 @@ This historical reconstruction approach:
 - Minimizes manual intervention and guesswork
 - Respects both `.gitignore` and `.migrateignore` patterns to prevent unwanted files in migrations
 
+## Binary File Handling
+
+### Overview
+The sync and update system now properly handles binary files, which cannot be merged automatically like text files. Binary files are detected using content analysis and handled with simple "replace or keep" logic.
+
+### Binary File Detection
+Files are automatically detected as binary if they:
+- Contain null bytes (common binary indicator)
+- Have more than 30% non-printable characters (excluding common whitespace)
+
+### Migration Generation with Binary Files
+When generating migrations:
+- Binary files are stored as `.binary` files in the migration's `__files` directory
+- Binary operations are tracked as `type: 'binary'` entries in migration files
+- Binary files cannot be diffed, so changes are always treated as full replacements
+
+### Conflict Resolution for Binary Files
+During sync or update operations, binary file conflicts are handled with simplified options:
+
+```
+🔧 Binary File Conflict Detected
+==================================================
+File: assets/logo.png
+Binary files cannot be merged automatically.
+==================================================
+
+💡 How would you like to handle the binary file assets/logo.png?
+1. Keep my version (current file)
+2. Replace with template version
+
+Enter your choice (1 or 2):
+```
+
+**Key differences from text file conflicts:**
+- No "Claude Code merge" option (binary files cannot be merged)
+- Simple two-choice interface: keep current or replace with template
+- Clear messaging that binary files cannot be merged automatically
+
+### Technical Implementation
+- **Detection**: `isBinaryFile()` function in `file-utils.ts`
+- **State Tracking**: `getCurrentStateWithBinary()` separates text and binary files
+- **Migration Types**: Extended with `binary` type and `isBinary` flag
+- **Conflict Resolution**: Simplified interactive prompts for binary files
+- **State Reconstruction**: Binary files tracked through migration history
+
+### Benefits
+- **Clear Separation**: Binary and text files handled appropriately for their type
+- **User-Friendly**: Simple conflict resolution for binary files
+- **Robust Detection**: Accurate binary file identification
+- **Preserved Functionality**: All existing text file merging capabilities maintained
+
 ## Recent Updates
 
-### v1.4.2 - Enhanced Claude CLI Performance (Current)
+### v1.5.4 - Binary File Support (Current)
+**Feature:** Added comprehensive binary file handling for sync and update operations.
+
+**New Capabilities:**
+- **Automatic Binary Detection**: Files are automatically detected as binary using content analysis
+- **Simplified Conflict Resolution**: Binary files get "keep or replace" options instead of merge attempts
+- **Enhanced Migration System**: Binary files stored as `.binary` files in migrations
+- **Robust State Tracking**: Separate handling of text vs binary files throughout the system
+
+**Technical Implementation:**
+- Added `isBinaryFile()` detection function using null byte and non-printable character analysis
+- Extended migration data structures with `binary` type and `isBinary` flag
+- Created binary-aware state reconstruction and difference calculation
+- Implemented interactive binary file conflict resolution
+- Added comprehensive test coverage for binary file operations
+
+**User Experience:**
+- Clear messaging when binary files cannot be merged automatically
+- Simple two-choice prompts: "Keep my version" or "Replace with template version"
+- All existing text file merging capabilities preserved and enhanced
+
+### v1.4.2 - Enhanced Claude CLI Performance
 **Issue:** Claude CLI timeout was too short (60 seconds) for complex merges like package.json, and users had no visibility into processing progress during long operations.
 
 **Improvements:**

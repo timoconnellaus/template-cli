@@ -102,6 +102,40 @@ export async function applyMigration(templatePath: string, targetPath: string, m
         await fs.copyFile(templateFilePath, targetFilePath);
         break;
         
+      case 'binary':
+        // Handle binary file operations - always prompt for replace or keep
+        const binaryFilePath = join(migrationPath, '__files', `${filePath}.binary`);
+        const targetExists = await fs.access(targetFilePath).then(() => true).catch(() => false);
+        
+        if (targetExists) {
+          // Binary file conflict - prompt user
+          console.log('\n🔧 Binary File Conflict Detected');
+          console.log('='.repeat(50));
+          console.log(`File: ${filePath}`);
+          console.log('Binary files cannot be merged automatically.');
+          console.log('='.repeat(50));
+          
+          const choice = await select({
+            message: `How would you like to handle the binary file ${filePath}?`,
+            choices: [
+              { name: 'Keep my version (current file)', value: 'keep' },
+              { name: 'Replace with template version', value: 'replace' }
+            ]
+          });
+
+          if (choice === 'replace') {
+            await fs.copyFile(binaryFilePath, targetFilePath);
+            console.log(`📝 Replaced ${filePath} with template version`);
+          } else {
+            console.log(`📝 Kept your version of ${filePath}`);
+          }
+        } else {
+          // New binary file - just copy it
+          await ensureDirectoryExists(dirname(targetFilePath));
+          await fs.copyFile(binaryFilePath, targetFilePath);
+        }
+        break;
+        
       case 'modify':
         // Apply unified diff to existing file
         if (entry.diffFile) {
@@ -170,51 +204,56 @@ export async function applyMigration(templatePath: string, targetPath: string, m
             await ensureDirectoryExists(dirname(newFilePath));
             await fs.rename(oldFilePath, newFilePath);
             
-            // Apply diffs if there are content changes
-            if (entry.diffFile) {
-              try {
-                const diffPath = join(migrationPath, '__files', entry.diffFile);
-                const diffContent = await fs.readFile(diffPath, 'utf8');
-                const currentContent = await fs.readFile(newFilePath, 'utf8');
-                const newContent = applyUnifiedDiff(currentContent, diffContent);
-                await fs.writeFile(newFilePath, newContent, 'utf8');
-              } catch (error) {
-                // Interactive conflict resolution for moved files
-                const currentContent = await fs.readFile(newFilePath, 'utf8');
-                const diffContent = await fs.readFile(join(migrationPath, '__files', entry.diffFile), 'utf8');
-                const conflictFilePath = entry.newPath || filePath;
-                
-                console.log('\n🔧 Merge Conflict Detected');
-                console.log('='.repeat(50));
-                console.log(`File: ${conflictFilePath}`);
-                console.log(`Error: ${(error as Error).message}`);
-                console.log('='.repeat(50));
-                
-                const choice = await select({
-                  message: `How would you like to resolve the conflict in ${conflictFilePath}?`,
-                  choices: [
-                    { name: 'Keep my version (current content)', value: 'keep' },
-                    { name: 'Use template version (apply diff forcefully if possible)', value: 'template' },
-                    { name: 'Use Claude Code CLI to automatically merge both versions', value: 'claude' }
-                  ]
-                });
+            if (entry.isBinary) {
+              // Binary file move - no diffs to apply
+              console.log(`📁 Moved binary file: ${entry.oldPath} → ${entry.newPath}`);
+            } else {
+              // Apply diffs if there are content changes for text files
+              if (entry.diffFile) {
+                try {
+                  const diffPath = join(migrationPath, '__files', entry.diffFile);
+                  const diffContent = await fs.readFile(diffPath, 'utf8');
+                  const currentContent = await fs.readFile(newFilePath, 'utf8');
+                  const newContent = applyUnifiedDiff(currentContent, diffContent);
+                  await fs.writeFile(newFilePath, newContent, 'utf8');
+                } catch (error) {
+                  // Interactive conflict resolution for moved files
+                  const currentContent = await fs.readFile(newFilePath, 'utf8');
+                  const diffContent = await fs.readFile(join(migrationPath, '__files', entry.diffFile), 'utf8');
+                  const conflictFilePath = entry.newPath || filePath;
+                  
+                  console.log('\n🔧 Merge Conflict Detected');
+                  console.log('='.repeat(50));
+                  console.log(`File: ${conflictFilePath}`);
+                  console.log(`Error: ${(error as Error).message}`);
+                  console.log('='.repeat(50));
+                  
+                  const choice = await select({
+                    message: `How would you like to resolve the conflict in ${conflictFilePath}?`,
+                    choices: [
+                      { name: 'Keep my version (current content)', value: 'keep' },
+                      { name: 'Use template version (apply diff forcefully if possible)', value: 'template' },
+                      { name: 'Use Claude Code CLI to automatically merge both versions', value: 'claude' }
+                    ]
+                  });
 
-                let resolvedContent: string;
-                
-                if (choice === 'keep') {
-                  resolvedContent = currentContent;
-                  console.log(`📝 Kept your version of ${conflictFilePath}`);
-                } else if (choice === 'template') {
-                  resolvedContent = await tryApplyDiffForcefully(currentContent, diffContent);
-                  console.log(`📝 Applied template version of ${conflictFilePath}`);
-                } else {
-                  // Use Claude CLI to merge
-                  const userDiff = await calculateUserDiff(conflictFilePath, currentContent, templatePath);
-                  resolvedContent = await callClaudeToMergeFile(conflictFilePath, currentContent, diffContent, userDiff, templatePath);
-                  console.log(`🤖 Claude Code CLI merged ${conflictFilePath}`);
+                  let resolvedContent: string;
+                  
+                  if (choice === 'keep') {
+                    resolvedContent = currentContent;
+                    console.log(`📝 Kept your version of ${conflictFilePath}`);
+                  } else if (choice === 'template') {
+                    resolvedContent = await tryApplyDiffForcefully(currentContent, diffContent);
+                    console.log(`📝 Applied template version of ${conflictFilePath}`);
+                  } else {
+                    // Use Claude CLI to merge
+                    const userDiff = await calculateUserDiff(conflictFilePath, currentContent, templatePath);
+                    resolvedContent = await callClaudeToMergeFile(conflictFilePath, currentContent, diffContent, userDiff, templatePath);
+                    console.log(`🤖 Claude Code CLI merged ${conflictFilePath}`);
+                  }
+                  
+                  await fs.writeFile(newFilePath, resolvedContent, 'utf8');
                 }
-                
-                await fs.writeFile(newFilePath, resolvedContent, 'utf8');
               }
             }
           } catch (error) {
