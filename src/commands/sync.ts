@@ -303,6 +303,10 @@ async function handleSimilarFiles(
     const userIsBinary = isBinaryContent(userContent);
     const templateIsBinary = isBinaryContent(templateContent);
     
+    // Split content into lines for text files (needed for merge functionality)
+    let userLines: string[] = [];
+    let templateLines: string[] = [];
+    
     if (userIsBinary || templateIsBinary) {
       // Binary file - show size comparison instead of line count
       console.log('\n📊 Binary file differences detected:');
@@ -316,8 +320,8 @@ async function handleSimilarFiles(
     } else {
       // Text file - show line count differences
       console.log('\n📊 Differences detected:');
-      const userLines = userContent.split('\n');
-      const templateLines = templateContent.split('\n');
+      userLines = userContent.split('\n');
+      templateLines = templateContent.split('\n');
       
       console.log(`Your version: ${userLines.length} lines`);
       console.log(`Template version: ${templateLines.length} lines`);
