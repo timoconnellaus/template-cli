@@ -78,17 +78,21 @@ INSTRUCTIONS:
 
 Please edit the file now to create an intelligent merge that respects both the user's customizations and the template's improvements.`;
 
-  // Show spinner
+  // Show spinner with progress feedback
   const spinnerChars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let spinnerIndex = 0;
+  let stepCount = 0;
   
   const spinnerInterval = setInterval(() => {
-    process.stdout.write(`\r${spinnerChars[spinnerIndex]} Running Claude Code CLI...`);
+    const stepText = stepCount > 0 ? ` (${stepCount} steps)` : '';
+    process.stdout.write(`\r${spinnerChars[spinnerIndex]} Running Claude Code CLI...${stepText}`);
     spinnerIndex = (spinnerIndex + 1) % spinnerChars.length;
   }, 100);
 
   try {
-    const result = await runClaudeCli(prompt);
+    const result = await runClaudeCli(prompt, (newStepCount) => {
+      stepCount = newStepCount;
+    });
     clearInterval(spinnerInterval);
     process.stdout.write('\r✅ Claude Code CLI completed successfully\n');
     
@@ -114,7 +118,7 @@ Please edit the file now to create an intelligent merge that respects both the u
   }
 }
 
-function runClaudeCli(prompt: string): Promise<ClaudeCliResponse> {
+function runClaudeCli(prompt: string, onStepUpdate?: (stepCount: number) => void): Promise<ClaudeCliResponse> {
   return new Promise((resolve, reject) => {
     // Use the full path to the claude binary to avoid alias/PATH issues
     const claudePath = `${process.env.HOME}/.claude/local/claude`;
@@ -131,14 +135,15 @@ function runClaudeCli(prompt: string): Promise<ClaudeCliResponse> {
     let stderr = '';
     let isResolved = false;
     let resultMessage: ClaudeCliResponse | null = null;
+    let stepCount = 0;
 
-    // Add timeout to prevent hanging
+    // Add timeout to prevent hanging (5 minutes)
     const timeout = setTimeout(() => {
       if (!isResolved) {
         child.kill('SIGTERM');
-        reject(new Error('Claude CLI timed out after 60 seconds'));
+        reject(new Error('Claude CLI timed out after 5 minutes'));
       }
-    }, 60000);
+    }, 300000);
 
     child.stdout.on('data', (data) => {
       const rawData = data.toString();
@@ -150,6 +155,12 @@ function runClaudeCli(prompt: string): Promise<ClaudeCliResponse> {
         if (line.trim()) {
           try {
             const parsed = JSON.parse(line);
+            
+            // Count steps for progress feedback
+            if (parsed.type === 'tool_use' || parsed.type === 'tool_result' || parsed.type === 'thinking' || parsed.type === 'content') {
+              stepCount++;
+              onStepUpdate?.(stepCount);
+            }
             
             // Look for the final result message
             if (parsed.type === 'result') {

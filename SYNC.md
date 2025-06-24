@@ -321,7 +321,25 @@ This historical reconstruction approach:
 
 ## Recent Updates
 
-### v1.4.1 - Refactored Claude CLI Integration (Current)
+### v1.4.2 - Enhanced Claude CLI Performance (Current)
+**Issue:** Claude CLI timeout was too short (60 seconds) for complex merges like package.json, and users had no visibility into processing progress during long operations.
+
+**Improvements:**
+- **Extended Timeout**: Increased Claude CLI timeout from 60 seconds to 5 minutes (300,000ms) to handle complex merges
+- **Progress Feedback**: Added real-time step counter showing Claude CLI processing steps (e.g., "Running Claude Code CLI... (12 steps)")
+- **Better User Experience**: Users can now see that progress is being made during long-running merge operations
+
+**Technical Changes:**
+- Modified `src/utils/claude-cli.ts` to track and display processing steps from Claude CLI JSON stream
+- Updated timeout error message to reflect new 5-minute limit
+- Added step counting for `tool_use`, `tool_result`, `thinking`, and `content` message types
+
+**Benefits:**
+- Prevents premature timeouts on complex files like package.json
+- Provides user confidence that processing is actively occurring
+- Better handles large file merges and complex conflict resolution scenarios
+
+### v1.4.1 - Refactored Claude CLI Integration
 **Issue:** The conflict resolution system was tightly coupled, with Claude CLI calling logic mixed with user prompts, making it difficult to maintain and test.
 
 **Refactoring:**
